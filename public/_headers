@@ -1,9 +1,10 @@
 # Security headers for every response from Cloudflare Pages.
 # Scripts and styles come from this site only (Starlight and the API reference inline a few small
-# scripts and styles, hence 'unsafe-inline'). connect-src lets the API reference's Test Request
+# scripts and styles, hence 'unsafe-inline'; search runs WebAssembly, hence 'wasm-unsafe-eval').
+# connect-src lets the API reference's Test Request
 # reach the server the reader chooses.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
