@@ -19,7 +19,7 @@ Deletion is only allowed while nothing of the collection remains, so no revision
 The request needs `If-Match` with the type's `ETag` and an `Idempotency-Key`, so a retry after a lost answer replays the deletion instead of answering 404.
 
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/projects/{project}/environments/{environment}/content-types/drafts-old \
+curl -X DELETE https://cms.example.com/api/v1/projects/{project}/environments/{environment}/content-types/drafts-old \
   -H 'If-Match: "v3"' -H 'Idempotency-Key: delete-drafts-old-0001' \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```

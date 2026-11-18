@@ -15,7 +15,7 @@ In the Studio, **Settings → Review stages** edits the list, and a publish requ
 Through the API, replace the whole list under its `ETag` (you need permission to change the schema):
 
 ```bash
-curl -X PUT http://localhost:8080/api/v1/projects/{project}/environments/{environment}/review-stages \
+curl -X PUT https://cms.example.com/api/v1/projects/{project}/environments/{environment}/review-stages \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H 'If-Match: "sha256:…"' \
   -H "Idempotency-Key: stages-2026-11-0001" -H "Content-Type: application/json" \
   -d '{"stages": [{"key": "editor", "name": "Editor"},

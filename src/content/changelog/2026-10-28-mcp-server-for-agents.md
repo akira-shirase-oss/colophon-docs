@@ -11,7 +11,7 @@ docs:
 Colophon now has a Model Context Protocol server, so an agent host can give an AI agent typed tools over your content. It speaks MCP over standard input and output, and it is a plain client of the same `/api/v1` the Studio and the CLI use, with a project API token as its only credential: an agent can do exactly what a script with that token can, and what it writes is attributed to the token.
 
 ```bash
-COLOPHON_SERVER=http://localhost:8080
+COLOPHON_SERVER=https://cms.example.com
 COLOPHON_TOKEN=colophon_api_…
 COLOPHON_PROJECT={project}
 ```

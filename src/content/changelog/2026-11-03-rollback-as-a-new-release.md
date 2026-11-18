@@ -17,7 +17,7 @@ In the Studio, a release's receipt has **Roll back to this release** for anyone 
 Through the API:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/projects/{project}/environments/{environment}/releases/{generation}/rollback \
+curl -X POST https://cms.example.com/api/v1/projects/{project}/environments/{environment}/releases/{generation}/rollback \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Idempotency-Key: rollback-to-12-0001" \
   -H "Content-Type: application/json" -d '{"title": "Rollback to release 12"}'
 ```

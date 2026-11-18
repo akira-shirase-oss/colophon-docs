@@ -19,6 +19,6 @@ Every entry now carries a `visibility`, set with `?visibility=` on a create or s
 In the Studio, the sidebar's People group now holds Members and a new Audience page (visitors, roles, disabling, sign-in activity), and visitor sign-ups and sign-ins are recorded in the audit log.
 
 ```sh
-curl http://localhost:8080/content/v1/{project}/production/posts \
+curl https://cms.example.com/content/v1/{project}/production/posts \
   -H "Authorization: Bearer $SITE_SESSION"
 ```

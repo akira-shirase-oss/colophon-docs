@@ -15,7 +15,7 @@ Why it matters: you can generate a typed client, browse the API in any OpenAPI v
 How to use it: `GET /openapi.json` needs no sign-in. It answers with `Cache-Control: public, max-age=300` and an `ETag`; send that back in `If-None-Match` and an unchanged document answers `304 Not Modified`.
 
 ```sh
-curl -s -D - -o openapi.json http://localhost:8080/openapi.json | grep -i etag
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/openapi.json \
+curl -s -D - -o openapi.json https://cms.example.com/openapi.json | grep -i etag
+curl -s -o /dev/null -w '%{http_code}\n' https://cms.example.com/openapi.json \
   -H 'If-None-Match: "<etag from above>"'   # 304
 ```

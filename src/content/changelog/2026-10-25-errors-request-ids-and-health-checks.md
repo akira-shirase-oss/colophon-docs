@@ -21,7 +21,7 @@ The same ID comes back in the `x-request-id` header on every answer and appears 
 Two health endpoints need no sign-in. `/livez` says the process responds. `/readyz` reports `ready`, or `degraded` when the cache is down (slower, still safe), with a 200; `starting`, `not_ready` or `draining` answer 503, so a load balancer stops sending traffic. `colophon doctor` reads it for you:
 
 ```sh
-colophon doctor --server http://localhost:8080
+colophon doctor --server https://cms.example.com
 ```
 
 It exits 0 when the server is ready and 5 when it is degraded, not ready or unreachable.

@@ -39,7 +39,7 @@ You may send your own `x-request-id` (1 to 64 characters of letters, digits, `.`
 uses it instead of making one, so a request can be followed from your logs into Colophon's:
 
 ```sh run=errors
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/not-a-uuid" \
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/not-a-uuid" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "x-request-id: build-4711.fetch-recipes"
 ```
@@ -220,7 +220,7 @@ See [Rate limits](/api/rate-limits/) for what is counted.
 **A write without an `Idempotency-Key`:**
 
 ```sh run=errors
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"dish": "Scones", "minutes": 25}'
@@ -272,7 +272,7 @@ Look at what release 1 changed, then publish again with `"base_generation": 1`.
 token that may change content types:
 
 ```sh run=errors
-curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
+curl -i -X PUT "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H 'If-Match: "v3"' \
@@ -327,7 +327,7 @@ that entry's content. Nothing was changed.
 **A method the path doesn't take:**
 
 ```sh run=errors
-curl -i -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+curl -i -X DELETE "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

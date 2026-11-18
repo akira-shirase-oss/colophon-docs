@@ -36,7 +36,7 @@ There is no query-string form and no custom header: a credential in a URL ends u
 **The management API.** Ask the server what this token may do:
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/permissions" \
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/permissions" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
@@ -97,7 +97,7 @@ date: Wed, 18 Nov 2026 11:39:17 GMT
 **GraphQL** takes the same header on `POST …/collections/{collection}/graphql`:
 
 ```sh run=tokens
-curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+curl "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query": "{ entries(first: 5) { nodes { id title } } }"}'
@@ -106,7 +106,7 @@ curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/col
 **Live events** too, on the signed-in stream (`curl -N` keeps the stream open):
 
 ```sh not-run="keeps the stream open until you stop it"
-curl -N "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+curl -N "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/events" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
@@ -166,7 +166,7 @@ Here the project's owner makes a read-only token for a nightly site build:
 {/* snippet tokens: snippets/personal-token.sh */}
 
 ```sh run=tokens
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/tokens" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/tokens" \
   -H "Authorization: Bearer $PERSONAL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "Nightly build", "kind": "read-only", "expires_in_days": 30}'
@@ -221,7 +221,7 @@ export BUILD_TOKEN_ID='…'                # data.id
 
 {/* snippet tokens: snippets/from-last.sh BUILD_TOKEN=.data.secret BUILD_TOKEN_ID=.data.id */}
 
-`PERSONAL_TOKEN` here is the owner's personal access token. `colophon login --server http://localhost:8080`
+`PERSONAL_TOKEN` here is the owner's personal access token. `colophon login --server https://cms.example.com`
 gets one through a browser approval and keeps it in `~/.config/colophon/credentials.json`; see [CLI](/cli/).
 
 A **custom** token lists its permissions. Each is an `action` and a `subject` (`*` or a content type's
@@ -229,7 +229,7 @@ address name), with optional `fields` and `condition: "own"`. This one may read 
 and nothing else; the answer's `permissions` are exactly what was granted:
 
 ```sh run=tokens
-curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/tokens" \
+curl -s -X POST "https://cms.example.com/api/v1/projects/$PROJECT/tokens" \
   -H "Authorization: Bearer $PERSONAL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -275,7 +275,7 @@ Days and minutes are rolling windows. A limit you leave out is unconstrained; `{
 all. Give the nightly build token a ceiling of two requests a minute:
 
 ```sh run=tokens
-curl -s -X PATCH "http://localhost:8080/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
+curl -s -X PATCH "https://cms.example.com/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
   -H "Authorization: Bearer $PERSONAL_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"limits": {"requests_per_minute": 2}}' | grep -o '"limits":{[^}]*}'
@@ -290,7 +290,7 @@ Three reads in a row: the third is over the ceiling.
 ```sh run=tokens
 for attempt in 1 2 3; do
   curl -s -o /dev/null -w "%{http_code}\n" \
-    "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+    "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
     -H "Authorization: Bearer $BUILD_TOKEN"
 done
 ```
@@ -304,7 +304,7 @@ done
 The refusal says when to try again, in seconds:
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $BUILD_TOKEN"
 ```
 
@@ -339,7 +339,7 @@ In the Studio, press **Revoke** beside the token and confirm with **Revoke it**.
 `DELETE`:
 
 ```sh run=tokens
-curl -s -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
+curl -s -X DELETE "https://cms.example.com/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
   -H "Authorization: Bearer $PERSONAL_TOKEN" | grep -o '"state":"[a-z]*"'
 ```
 
@@ -351,7 +351,7 @@ Revoking is exact. It waits for requests already running under the token to fini
 committed no new request starts: the next one is refused.
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $BUILD_TOKEN"
 ```
 
@@ -394,7 +394,7 @@ A token is for content. These stay with people, whatever the token's kind:
 A token on a people route:
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/members" \
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/members" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
@@ -421,7 +421,7 @@ date: Wed, 18 Nov 2026 11:39:17 GMT
 A token on a project that isn't its own:
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/01a1ee5f-0000-7000-8000-000000000000/environments/production/collections/recipes/entries" \
+curl -i "https://cms.example.com/api/v1/projects/01a1ee5f-0000-7000-8000-000000000000/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
@@ -489,7 +489,7 @@ show a person, and the request id. Branch on `code` and `details.reason`.
 No credential at all:
 
 ```sh run=tokens
-curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries"
+curl -i "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries"
 ```
 
 ```http output=tokens
@@ -514,7 +514,7 @@ Studio and send a create with it:
 {/* snippet tokens: snippets/read-only-token.sh */}
 
 ```sh run=tokens
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $READ_ONLY_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: create-scones-00001" \

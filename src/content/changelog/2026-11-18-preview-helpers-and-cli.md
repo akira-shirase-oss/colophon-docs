@@ -21,7 +21,7 @@ Connecting your site to draft preview is now a few lines. `@colophon-cms/sdk` ad
 
 ```ts
 import { createPreviewHandler } from '@colophon-cms/sdk';
-const enter = createPreviewHandler({ baseUrl: 'http://localhost:8080', project: PROJECT_ID });
+const enter = createPreviewHandler({ baseUrl: 'https://cms.example.com', project: PROJECT_ID });
 ```
 
 A static site can read previews straight from the browser: `/preview/v1` answers CORS for the environment's preview origin, never with credentials.

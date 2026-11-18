@@ -13,7 +13,7 @@ docs:
 Collections can now be queried with a small JSON document posted to `…/query`: `filters` (`eq`, `in`, `lt`, `lte`, `gt`, `gte`, `contains`), `sort`, `fields`, `limit` and `depth`. The same document runs on published content at `/content/v1` (pinned to a release with `?generation=`) and, for signed-in callers, on current drafts at `POST /api/v1/projects/{project}/environments/{environment}/collections/{collection}/entries/query`.
 
 ```bash
-curl -X POST "http://localhost:8080/content/v1/{project}/{environment}/posts/query" \
+curl -X POST "https://cms.example.com/content/v1/{project}/{environment}/posts/query" \
   -H "Content-Type: application/json" \
   -d '{"filters": [{"field": "category", "op": "eq", "value": "travel"}],
        "sort": [{"field": "published_on", "dir": "desc"}],

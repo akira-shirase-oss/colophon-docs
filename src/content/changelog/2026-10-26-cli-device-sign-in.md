@@ -13,7 +13,7 @@ docs:
 Why it matters: a terminal can't hold a browser session, and the approval happens where you can see it. Codes last 10 minutes and the token is handed out exactly once.
 
 ```sh
-colophon login --server http://localhost:8080
+colophon login --server https://cms.example.com
 colophon whoami
 colophon content create posts --project my-site --data '{"headline":"Hello"}'
 colophon content list posts --project my-site --limit 20

@@ -15,7 +15,7 @@ In the Studio's entry editor, **Locale** sets the entry's own tag (empty means t
 Through the API, `?locale=` rides create, save and list, and a new translation is one request:
 
 ```bash
-curl -X POST "http://localhost:8080/api/v1/projects/{project}/environments/{environment}/collections/posts/entries/{entry}/localizations?locale=fr" \
+curl -X POST "https://cms.example.com/api/v1/projects/{project}/environments/{environment}/collections/posts/entries/{entry}/localizations?locale=fr" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Idempotency-Key: translate-post-fr-0001"
 ```
 

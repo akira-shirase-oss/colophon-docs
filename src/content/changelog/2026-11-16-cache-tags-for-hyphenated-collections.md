@@ -16,7 +16,7 @@ The rule for a collection tag is now exactly the rule for a collection's name, h
 
 ```http
 GET /content/v1/{project}/{environment}/release-notes HTTP/1.1
-Host: localhost:8080
+Host: cms.example.com
 
 HTTP/1.1 200 OK
 Cache-Tag: …, colophon:p:<project id>:e:<environment id>:c:release-notes

@@ -65,7 +65,7 @@ let target = stub;
 current = '/api/reference/ (try-it)';
 await page.route(`${base}/api/reference/`, async (route) => {
 	const response = await route.fetch();
-	const body = (await response.text()).replaceAll('http://localhost:8080', target);
+	const body = (await response.text()).replaceAll('https://cms.example.com', target);
 	// The page's inline scripts are allowed by hash, so the edited one needs its new hash: the policy
 	// stays enforced, with exactly this page's scripts allowed.
 	const headers = { ...response.headers() };
@@ -126,6 +126,30 @@ current = '/api/reference/ (try-it, remote)';
 await tryIt();
 if (!sentToRemote.some((r) => r.authorization === `Bearer ${token}`))
 	problems.push(`try-it did not send the token straight to ${remote} (browser sent ${JSON.stringify(sentToRemote)})`);
+
+// "Your Colophon URL" is kept in the browser and never sent anywhere: with one stored, every page
+// shows it in its examples and none contacts it.
+const yours = 'https://my-colophon.example.net';
+const stored = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+await stored.addInitScript((url) => {
+	try {
+		localStorage.setItem('colophon-docs:server', url);
+	} catch {}
+}, yours);
+const reached = [];
+stored.on('request', (request) => {
+	if (new URL(request.url()).host === new URL(yours).host) reached.push(request.url());
+});
+const storedPage = await stored.newPage();
+for (const path of paths) await storedPage.goto(base + path, { waitUntil: 'networkidle' });
+await storedPage.goto(`${base}/api/delivery/`, { waitUntil: 'networkidle' });
+const code = await storedPage.locator('.sl-markdown-content pre').allInnerTexts();
+const copies = await storedPage.locator('.sl-markdown-content [data-code]').evaluateAll((buttons) => buttons.map((b) => b.dataset.code ?? ''));
+if (!code.some((text) => text.includes(yours))) problems.push("no example on the delivery page shows the stored URL");
+if (code.some((text) => text.includes('https://cms.example.com'))) problems.push('an example still shows cms.example.com with a URL stored');
+if (copies.some((text) => text.includes('https://cms.example.com'))) problems.push('a copy button still copies cms.example.com with a URL stored');
+if (reached.length > 0) problems.push(`the stored URL was contacted: ${reached.slice(0, 3).join(', ')}`);
+await stored.close();
 await browser.close();
 server.close();
 
@@ -139,4 +163,4 @@ if (problems.length > 0) {
 	console.error(`check-privacy: ${problems.length} problem(s)\n${problems.map((p) => `  - ${p}`).join('\n')}`);
 	process.exit(1);
 }
-console.log('check-privacy: only this site and the configured server were contacted; no token kept after reload');
+console.log('check-privacy: only this site and the configured server were contacted; no token kept after reload; a stored Your Colophon URL is shown and never contacted');

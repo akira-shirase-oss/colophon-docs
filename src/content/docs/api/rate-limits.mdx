@@ -50,7 +50,7 @@ doesn't exist, and the rest are refused by the limit:
 TOKEN="colophon_api_$(openssl rand -hex 22 | head -c 43)"   # made up: no such token
 mkdir -p burst
 for i in $(seq 900); do
-  printf 'url = "http://localhost:8080/api/v1/projects/%s/environments/production/collections/recipes/entries"\noutput = "burst/%d"\n' "$PROJECT" "$i"
+  printf 'url = "https://cms.example.com/api/v1/projects/%s/environments/production/collections/recipes/entries"\noutput = "burst/%d"\n' "$PROJECT" "$i"
 done | curl --parallel --parallel-max 100 -s -i -H "Authorization: Bearer $TOKEN" -K -
 grep -h '^HTTP/' burst/* | cut -d' ' -f2- | sort -u
 ```

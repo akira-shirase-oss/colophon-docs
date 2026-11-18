@@ -12,7 +12,7 @@ Entries can now be deleted through the API. A deletion leaves a tombstone: the e
 
 ```bash
 curl -X DELETE \
-  http://localhost:8080/api/v1/projects/{project}/environments/{environment}/collections/posts/entries/{entry} \
+  https://cms.example.com/api/v1/projects/{project}/environments/{environment}/collections/posts/entries/{entry} \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H 'If-Match: <the draft ETag>' \
   -H "Idempotency-Key: $(uuidgen)"

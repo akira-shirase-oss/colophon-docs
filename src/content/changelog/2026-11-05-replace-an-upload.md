@@ -15,7 +15,7 @@ Why it matters: each verified version is stored under its own SHA-256 and never 
 The same day, the Studio gained a Media page in the project sidebar: every upload with its thumbnail, state, dimensions and size, uploading, and a confirmed delete that names the entries still using a file.
 
 ```sh
-curl -X POST http://localhost:8080/api/v1/projects/{project}/environments/production/assets/{asset}/replace \
+curl -X POST https://cms.example.com/api/v1/projects/{project}/environments/production/assets/{asset}/replace \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: image/webp" \
   -H "X-Colophon-File-Name: hero.webp" -H "Idempotency-Key: $(uuidgen)" \
   --data-binary @hero.webp
