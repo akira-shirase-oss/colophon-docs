@@ -7,7 +7,7 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 Colophon is one server with several HTTP surfaces. The Studio, the `colophon` CLI, the TypeScript SDK and AI
 agents all use the same management API with the same permission checks; your website reads the delivery API.
-All of them are on the same address as the Studio, for example `http://localhost:8080` in the quick start.
+All of them are on the same address as the Studio, for example `https://cms.example.com` in the quick start.
 
 ## Which API to use
 
@@ -32,7 +32,7 @@ number (`Colophon-Generation`), an `ETag` for conditional requests, and cache he
 draft can never appear here: the delivery path reads with a database role that can't see drafts.
 
 ```sh run=management
-curl "http://localhost:8080/content/v1/$PROJECT/production/recipes"
+curl "https://cms.example.com/content/v1/$PROJECT/production/recipes"
 ```
 
 Colophon answers no cross-origin (CORS) requests on `/content/v1`, so read it from your site's server or build
@@ -47,7 +47,7 @@ network: a lost answer (`Idempotency-Key` makes a retry return the first result)
 (`If-Match` refuses a save made on a version that is no longer current).
 
 ```sh run=management
-curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

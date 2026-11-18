@@ -17,7 +17,7 @@ Entries are drafts, and every save writes a new revision; revisions are insert-o
 Creates and saves also need an `Idempotency-Key` (16 to 128 letters, digits, `-` or `_`). A retry after a lost answer replays the recorded result with `Idempotent-Replayed: true` instead of saving twice; the same key with a different body is 409 `idempotency_key_reused`.
 
 ```sh
-curl -X PUT "http://localhost:8080/api/v1/projects/{project}/environments/{environment}/collections/{collection}/entries/{entry}" \
+curl -X PUT "https://cms.example.com/api/v1/projects/{project}/environments/{environment}/collections/{collection}/entries/{entry}" \
   -H 'Authorization: Bearer …' -H 'If-Match: "{revision}"' \
   -H 'Idempotency-Key: save-hello-world-0001' \
   -H 'Content-Type: application/json' -d '{"title":"Hello"}'

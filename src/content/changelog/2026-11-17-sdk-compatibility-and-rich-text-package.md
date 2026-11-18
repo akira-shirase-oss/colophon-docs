@@ -15,7 +15,7 @@ docs:
 ```ts
 import { Client } from '@colophon-cms/sdk';
 
-const client = new Client({ baseUrl: 'http://localhost:8080', compat: 'throw' });
+const client = new Client({ baseUrl: 'https://cms.example.com', compat: 'throw' });
 const fit = await client.compatibility();
 if (!fit.compatible) console.error(fit.reason); // which side to upgrade, and to what
 ```

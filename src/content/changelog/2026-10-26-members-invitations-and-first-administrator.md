@@ -15,7 +15,7 @@ Signing in grants nothing by itself: people reach a project by invitation. Each 
 An invitation is a single-use link that expires after 72 hours by default. The answer that creates it is the only place the link appears; its token travels after `#`, so it never reaches a server, and only its hash is stored. Before joining, the invitee sees the project, the role and who invited them.
 
 ```sh
-curl -X POST http://localhost:8080/api/v1/projects/{project}/invitations \
+curl -X POST https://cms.example.com/api/v1/projects/{project}/invitations \
   -H 'Authorization: Bearer …' -H 'Content-Type: application/json' \
   -d '{"role":"editor","label":"Copy desk"}'
 ```

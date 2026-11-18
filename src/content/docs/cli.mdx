@@ -58,9 +58,10 @@ cargo build --release --locked -p colophon-cli
 Copy `target/release/colophon` onto your `PATH`. On a Linux host you can instead copy it out of the image, as
 [Installation](/installation/#1-binaries-and-the-studio) does.
 
-:::caution[Pass `--server http://localhost:8080`]
-The CLI's default server is `http://localhost:58000`, not the quick start's `http://localhost:8080`. Pass
-`--server http://localhost:8080` to `login` and `doctor`, or set `COLOPHON_SERVER=http://localhost:8080`.
+:::caution[Pass `--server` with your Colophon's address]
+The CLI's default server is `http://localhost:58000`, the address a production install listens on behind its
+proxy, which is probably not yours. Pass `--server https://cms.example.com` (your own address) to `login` and
+`doctor`, or set `COLOPHON_SERVER` to it. The quick start on this machine is `http://localhost:8080`.
 :::
 
 ## Check a server: `doctor`
@@ -116,7 +117,7 @@ colophon doctor --server http://localhost:58000 --json
 
    ```text not-run="the code is new every time"
    To sign in, open this link in a browser where you're signed in to Colophon:
-     http://localhost:8080/studio/device?code=FMTT-4ZP8
+     https://cms.example.com/studio/device?code=FMTT-4ZP8
    and check that it shows the code FMTT-4ZP8.
    Waiting for approval…
    ```

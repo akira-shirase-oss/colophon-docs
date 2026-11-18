@@ -17,7 +17,7 @@ Requests are now bounded: 5 links per client address per project in ten minutes 
 **What to do:** as a member with `audience.manage`, list every site that receives links (at most 32, each `scheme://host[:port]`):
 
 ```sh
-curl -X PUT http://localhost:8080/api/v1/projects/{project}/audience/origins \
+curl -X PUT https://cms.example.com/api/v1/projects/{project}/audience/origins \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: application/json" \
   -d '{"origins": ["https://www.example.com"]}'
 ```

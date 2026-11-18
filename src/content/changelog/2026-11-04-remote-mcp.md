@@ -15,7 +15,7 @@ Why it matters: it is the same server as the local `colophon mcp` process, not a
 How it works: the first `initialize` answers with an `Mcp-Session-Id` header, which later requests send back with `MCP-Protocol-Version: 2025-11-25`; `DELETE` on the same URL ends the session. Only project API tokens may connect: a browser session or personal token answers `403` with reason `api_token_required`. Sessions are capped per token (`429`) and per project and server (`503`), expire when idle, and stop working when the token is revoked.
 
 ```sh
-curl -X POST http://localhost:8080/api/v1/projects/{project}/environments/production/mcp \
+curl -X POST https://cms.example.com/api/v1/projects/{project}/environments/production/mcp \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Accept: application/json" -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"demo","version":"1"}}}'

@@ -34,7 +34,7 @@ enough alone.
 
   ```sh run=ops
   head -c 17408 /dev/zero | tr '\0' x |
-    curl -i -X POST http://localhost:8080/auth/signin -H 'Content-Type: application/json' --data-binary @-
+    curl -i -X POST https://cms.example.com/auth/signin -H 'Content-Type: application/json' --data-binary @-
   ```
 
   ```http output=ops
@@ -122,7 +122,7 @@ on a server others can reach.
 The Studio is served with headers that stop other sites framing it or sniffing its files:
 
 ```sh run=ops
-curl -sI http://localhost:8080/studio/ |
+curl -sI https://cms.example.com/studio/ |
   grep -iE '^(x-content-type-options|x-frame-options|content-security-policy|referrer-policy):'
 ```
 

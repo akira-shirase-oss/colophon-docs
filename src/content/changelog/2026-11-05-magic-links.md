@@ -15,7 +15,7 @@ Visitors to your site can now sign in, or sign up, without a password. Your site
 `POST /audience/v1/{project}/magic-link` answers the same `202` whether or not the address has an account, so it reveals nothing about who is registered. The link is your `return_to` page with `token=` added. Your site spends it with `POST /audience/v1/{project}/magic-link/{token}`: an existing account gets its session, an unknown address becomes a new site user in the project's open sign-up role, and a used, expired or unknown token answers `403 magic_link_invalid`. Only the token's hash is stored.
 
 ```sh
-curl -X POST http://localhost:8080/audience/v1/{project}/magic-link \
+curl -X POST https://cms.example.com/audience/v1/{project}/magic-link \
   -H 'Content-Type: application/json' \
   -d '{"email":"reader@example.com","return_to":"https://example.com/signed-in"}'
 ```

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "node scripts/copy-scalar.mjs && astro build && node scripts/csp-hashes.mjs && node scripts/check-dist.mjs",
+    "build": "node scripts/check-urls.mjs && node scripts/copy-scalar.mjs && astro build && node scripts/csp-hashes.mjs && node scripts/check-dist.mjs",
     "preview": "astro preview",
     "sync:openapi": "node scripts/sync-openapi.mjs",
     "check:openapi": "node scripts/sync-openapi.mjs --check",

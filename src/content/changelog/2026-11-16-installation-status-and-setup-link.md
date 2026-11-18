@@ -15,7 +15,7 @@ The first run used to be the hardest part: the installer copied a setup code out
 ```text
 Setup code: <code>
 ...the link fills the code in for you:
-    http://localhost:8080/studio/#setup=<code>
+    https://cms.example.com/studio/#setup=<code>
 ```
 
 The code travels in the `#` fragment, which browsers never send, so it reaches no server or proxy log. Opened from the link, the Studio leads with **Create an account** and fills the code into **Finish setting up**. The code works once, for an hour.
