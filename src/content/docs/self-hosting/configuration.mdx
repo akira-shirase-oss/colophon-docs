@@ -51,11 +51,13 @@ One binary runs every part of Colophon. `--role` (or `COLOPHON_ROLE`) picks whic
 | Role | Runs |
 |---|---|
 | `all` (default) | Everything below, in one process. The quick start and the systemd unit run this. |
-| `api` | The management, delivery, preview and media APIs, the Studio, live events, and the first-run setup code |
+| `api` | The management, delivery, preview and media APIs, the Studio, the listener that feeds live events, and the first-run setup code |
 | `worker` | Background work: deliveries to website connections, scheduled publishing, upload checks, bulk work, and the sweeps that expire unused uploads and old records |
 
 Every role listens on `COLOPHON_LISTEN_ADDR` and answers `/livez` and `/readyz`, whose body names the role, so two
-processes on one host need two addresses. Invalid values are refused before anything else:
+processes on one host need two addresses. In this build a `worker` process also answers the same HTTP routes as an
+`api` one, but without the live-events listener, so its event streams never hear a change: send people and websites
+only to `api` or `all` processes. Invalid values are refused before anything else:
 
 ```text
 Error: invalid value 'web' for '--role <ROLE>'
@@ -110,20 +112,22 @@ services:
       COLOPHON_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
     secrets:
       - oidc_client_secret
-    # Docker gives a container 10 seconds to stop; give Colophon its full shutdown grace.
-    stop_grace_period: 30s
+    # Docker gives a container 10 seconds to stop; give Colophon its shutdown grace (25 s)
+    # plus time to close up, as the systemd unit does.
+    stop_grace_period: 35s
 
 secrets:
   oidc_client_secret:
     file: ./oidc_client_secret   # readable by uid 65532, the user Colophon runs as
 ```
 
-The `.env` file beside `compose.yaml` holds Compose's own two settings, not the server's: `COLOPHON_PORT` (the host
-port, `8080`, published on `127.0.0.1` only) and `COLOPHON_IMAGE` (the image to run).
+Compose's own two settings, not the server's, come from your shell or a `.env` file beside `compose.yaml`:
+`COLOPHON_PORT` (the host port, default `8080`, published on `127.0.0.1` only) and `COLOPHON_IMAGE` (the image to
+run).
 
 ### Production: `colophon.env` and systemd credentials
 
-The systemd install in `deploy/production` splits settings in two. Everything that isn't secret goes in
+The systemd install splits settings in two. Everything that isn't secret goes in
 `/etc/colophon/colophon.env`, which the unit loads with `EnvironmentFile=`:
 
 ```sh title="/etc/colophon/colophon.env"
@@ -141,7 +145,7 @@ COLOPHON_S3_ACCESS_KEY=GK0123456789abcdef01234567
 Secrets are files in `/etc/colophon/credentials/`, readable by root only. The unit hands each one to the service as
 a systemd credential and points the `_FILE` setting at it (`%d` is the service's private credentials directory):
 
-```text title="deploy/production/colophon.service (excerpt)"
+```text title="/etc/systemd/system/colophon.service (excerpt)"
 EnvironmentFile=/etc/colophon/colophon.env
 LoadCredential=database_url:/etc/colophon/credentials/database_url
 LoadCredential=cache_url:/etc/colophon/credentials/cache_url
@@ -383,6 +387,8 @@ to the database as the **migration** login, the table owner, never the server's 
 | `COLOPHON_APP_PASSWORD_FILE` | none | `colophon admin init-roles` | A file holding the password for `colophon_app`, the server's login. |
 | `COLOPHON_BACKUP_PASSWORD_FILE` | none | `colophon admin init-roles` | A file holding the password for `colophon_backup`, the login base backups use; without it that login isn't made. |
 | `COLOPHON_ACCOUNT_PASSWORD` | none | `colophon admin account` | The password to set, so it stays out of shell history. |
+| `COLOPHON_OIDC_ISSUER` | none | `colophon admin bootstrap` | The issuer for `--issuer`, so the first administrator matches the server's identity provider. |
+| `COLOPHON_S3_ENDPOINT`, `_BUCKET`, `_ACCESS_KEY`, `_SECRET_KEY`, `_REGION` | `_REGION` is `garage` | `colophon admin ledger-export --s3-key` | The bucket the export goes to. The CLI reads the secret key from this variable only: it has no `_FILE` form. |
 
 `colophon mcp` reads `COLOPHON_SERVER`, `COLOPHON_TOKEN` and `COLOPHON_PROJECT`; see [MCP](/mcp/). Every command is
 on the [CLI](/cli/) page.

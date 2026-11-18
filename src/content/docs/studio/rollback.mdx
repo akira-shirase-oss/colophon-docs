@@ -13,10 +13,12 @@ request from the earlier release, and publishing that request makes a **new** re
 
 <Steps>
 
-1. Open **Releases** in the sidebar and press the release you want back. Its receipt opens.
+1. Open **Releases** in the sidebar and press the label of the release you want back. Its receipt
+   opens.
 
 2. Press **Roll back to this release**. It is on every release except the one that is live now, for any
-   role that may edit content.
+   role that may edit content. While Colophon builds the request the button says *Building the
+   restore…*.
 
    ![The receipt of Release 4, Apple cake and Pear tart, with the Roll back to this release button beside The publish request link](/screens/studio/rollback-receipt.webp)
 
@@ -36,11 +38,11 @@ request from the earlier release, and publishing that request makes a **new** re
 The request holds:
 
 - the version that was live in that release, for each entry live then whose live version has changed
-  since (marked **update**);
-- an **unpublish** for each entry that is live now but wasn't live then.
+  since (marked **Updated**);
+- a take-down (marked **Taken down**) for each entry that is live now but wasn't live then.
 
 Entries that are live now at the same version as then aren't in it. If nothing differs, Colophon
-refuses to build an empty rollback.
+refuses to build an empty rollback: *this environment already publishes what that release published*.
 
 ## Release numbers only go up
 
@@ -48,7 +50,7 @@ Publishing the rollback makes the next release, not the old number again. After 
 4 from release 6, the live release is 7, holding what 4 held, and releases 5 and 6 stay in the list
 with their receipts:
 
-![The Releases page: No. 7 Rollback to release 4, 1 entry changed; No. 6 Unpublish: Pear tart, 0 entries changed, 1 unpublished; No. 5 Apple cake: a longer bake; No. 4 Apple cake and Pear tart, 2 entries changed](/screens/studio/releases.webp)
+![The Releases page: Release 7: Rollback to release 4, 1 entry changed; Release 6: Unpublish: Pear tart, 0 entries changed, 1 unpublished; Release 5: Apple cake: a longer bake; Release 4: Apple cake and Pear tart, 2 entries changed](/screens/studio/releases.webp)
 
 So the record of what was live, and when, is never rewritten. Sites and caches see an ordinary new
 release, and a reader who pinned an earlier release still reads it as it was.

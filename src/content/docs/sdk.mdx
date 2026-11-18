@@ -100,7 +100,8 @@ API token is refused); `validateRichText(doc)`, which checks a rich-text documen
 Delivery reads need no credential, so a website's browser code makes a `Client` without one. A project API
 token or a personal access token is a password: use it only on a server, in a build step or a script, read
 from the environment. To show editors drafts on your site, use [Preview](/studio/preview/), whose tokens
-last minutes and read one entry.
+last minutes, read only one entry or one publish request, and stay in an `HttpOnly` cookie your browser code
+can't read.
 :::
 
 ## Read published content
@@ -206,8 +207,14 @@ reaches the delivery API only after the server validated it, so that means a bug
 
 ## Write drafts with a token
 
-`client.environment(project, environment?)` is the management API for one environment. Every answer is the
-API's body with one more field, `response`:
+`client.environment(project, environment?)` is the management API for one environment. The example below
+runs with the quick start's token. Give a script of your own a **Custom** token with only what it does
+(**See**, **Create** and **Edit** to write drafts and open publish requests; **Publish** only if it
+publishes), the shortest lifetime that fits, and revoke it when the script is retired. Without **Approve**,
+the example's approve step is refused with `missing_permission` before the `agent_self_review` rule is
+reached. See [Authentication & API tokens](/api/authentication/).
+
+Every answer is the API's body with one more field, `response`:
 
 | `response.` | What it is |
 |---|---|
@@ -422,7 +429,7 @@ Every failure is an `ApiError`, never a bare network error:
 | `reason`, `pointer` | Shortcuts for `details.reason` and `details.pointer` |
 | `etag` | The `ETag` the failed answer carried: on a `409`, the current one |
 | `retryAfterMs` | `Retry-After` in milliseconds on a `429`, capped at a minute |
-| `retryable` | `true` only when nothing was written or decided: no answer, `429`, a `5xx`, `deadline_exceeded` or `unavailable`. Never for `incompatible_server` |
+| `retryable` | `true` when sending the same request again may succeed: no answer (`status` `0`), `429`, a `5xx`, `deadline_exceeded`, `rate_limited` or `unavailable`. A write may still have happened when no answer came, so retry a write only with the same idempotency key. Never `true` for `incompatible_server` |
 
 Branch on `code` and `reason`. The codes the SDK raises itself:
 

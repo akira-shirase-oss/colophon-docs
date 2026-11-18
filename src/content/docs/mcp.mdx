@@ -43,7 +43,8 @@ before it starts, and the HTTP endpoint answers a person's sign-in with `403 api
    activity log says who did what: everything the agent writes is recorded as written by this token.
 2. Under **What it may do**, choose **Custom** and tick, for each content type the agent works on, **See**,
    **Create** and **Edit**. Leave **Approve** and **Publish** unticked: no tool uses them.
-3. Choose how long it **Works for**, press **Make the token**, and **Copy** it. It is shown once.
+3. Choose how long it **Works for**, the shortest the job needs, press **Make the token**, and **Copy** it.
+   It is shown once. Give each agent its own token, so you can revoke one without stopping the others.
 4. Open **Settings** → **General**, expand **Technical details** and copy the **Project id**.
 
 </Steps>
@@ -679,7 +680,8 @@ Three codes come from the MCP server itself rather than the API:
 - `invalid_arguments`: the arguments don't fit the tool. Nothing was sent.
 - `outcome_unknown`: a write got no answer, so it may or may not have happened. The text names the
   `idempotency_key` to retry with; retrying with it can't write twice.
-- `unavailable`: Colophon couldn't answer at all. Nothing was changed by the call.
+- `unavailable`: a read got no answer, or Colophon's answer couldn't be used (over 4 MiB, or not the JSON the
+  API documents). A read changes nothing; after a write, read the object again before you try once more.
 
 ```json
 {"id":6,"jsonrpc":"2.0","result":{"content":[{"text":"Invalid arguments for get_entry: id must be an id (a UUID). Nothing was sent.","type":"text"}],"isError":true,"structuredContent":{"error":{"code":"invalid_arguments","message":"id must be an id (a UUID)"}}}}

@@ -87,7 +87,7 @@ host and in the container.
   ```
 
   The file isn't secret, but the server must be able to read it: under the systemd unit, which runs as a dynamic
-  user, keep it world-readable (`0644`) somewhere under `/etc`.
+  user, keep it world-readable (`0644`) somewhere under `/etc`, outside the root-only `/etc/colophon/credentials/`.
 
 In both cases the host in the URL must be a name the certificate lists. Connecting by IP address works only if the
 certificate names that address.
@@ -154,7 +154,10 @@ Then `/etc/colophon/credentials/database_url` holds the server's URL, with the s
 postgres://colophon_app:<app_password>@db.example.com/colophon?sslmode=verify-full
 ```
 
-`colophon admin init-roles` is safe to run again: roles that exist, passwords included, are left as they are.
+`colophon admin init-roles` is safe to run again: roles that exist, passwords included, are left as they are. So it
+can't change a password: to rotate `colophon_app`'s, connect with `psql` as the migration login and run
+`\password colophon_app` (it sends only a hash, so the password doesn't land in PostgreSQL's logs), write the new URL
+to `/etc/colophon/credentials/database_url`, and restart the server.
 
 ## Check the connection
 

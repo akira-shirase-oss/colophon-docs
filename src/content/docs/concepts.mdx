@@ -39,8 +39,8 @@ on a revision that is no longer current is refused instead of overwriting someon
 The current revision is the **draft**. The Studio saves as you type, and a draft is visible only inside the
 project: readers never see it until it is published.
 
-In the Studio, an entry is **Draft** (never published), **Live** (readers see this version) or **Changed**
-(live, with newer unpublished edits). Deleting an entry (through the API) leaves a tombstone, and is refused
+In the Studio, an entry is **Draft** (never published), **Live** (readers see this version) or **Live with
+changes** (live, with newer unpublished edits). Deleting an entry (through the API) leaves a tombstone, and is refused
 while the entry is live, linked from another entry, or in an open publish request.
 
 ## Publish requests and review
@@ -72,7 +72,7 @@ Each release has a **receipt**: who published what, and what happened after. A *
 - a **site check** that reads your live site until it shows this release.
 
 The receipt records each delivery and each observation, and says plainly where the release stands:
-*Published in Colophon*, *Website update pending*, *Verified at* the locations that saw it, or *Needs
+*Published*, *Website update pending*, *Verified at* the locations that saw it, or *Needs
 attention*. It never claims more than was checked.
 
 ## Taking down and rolling back

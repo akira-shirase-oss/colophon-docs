@@ -66,7 +66,7 @@ down database. If a check ever stops running, its dependency is marked `down`: r
 |---|---|---|---|
 | `starting` | `503` | The database hasn't been checked yet | No |
 | `ready` | `200` | The database is up, and the cache is up or not configured | Yes |
-| `degraded` | `200` | The database is up, but the cache is down | Yes |
+| `degraded` | `200` | The database is up, but the cache is down or not checked yet | Yes |
 | `not_ready` | `503` | The database is down | No |
 | `draining` | `503` | The server is shutting down | No |
 
@@ -275,7 +275,9 @@ signals are in the places above:
 | Database connections, locks and WAL | PostgreSQL's own views, such as `pg_stat_activity` |
 | Cache memory and evictions | Valkey's `INFO` |
 
-For example, the delivery backlog by state, with its oldest due time:
+For example, the delivery backlog by state, with its oldest due time. The migration login owns every table, so
+run this from a trusted machine; a URL given to `psql` as an argument holds its password and shows in the process
+list, so on a shared host put the password in a `~/.pgpass` file (mode `0600`) instead:
 
 ```sh
 psql "$COLOPHON_MIGRATION_DATABASE_URL" -XAtq -c \
@@ -322,7 +324,7 @@ If requests outlive the grace, the last lines are `shutdown deadline passed with
 `shutdown complete, abandoning requests still in flight`, at `WARN`.
 
 Give the process manager at least the grace before it kills: the systemd unit waits 35 seconds
-(`TimeoutStopSec=35`). Docker waits only 10 seconds by default, so in the quick start add `stop_grace_period: 30s`
+(`TimeoutStopSec=35`). Docker waits only 10 seconds by default, so in the quick start add `stop_grace_period: 35s`
 to the `colophon` service in your `compose.override.yaml`.
 
 ## Related

@@ -43,7 +43,8 @@ enough alone.
   ```
 
 - **The first administrator** is made with a one-time setup code that the server prints to its own log. It works
-  once, for an hour, and only its hash is stored.
+  once, for an hour, and only its hash is stored. Until it has been used, anyone who can read the server's log can
+  become the administrator, so keep the log private and create the first account straight after installing.
 
 Colophon has no second sign-in factor for its own password accounts. If you need one, have people sign in through
 an identity provider that enforces it (the `COLOPHON_OIDC_*` settings).
@@ -105,7 +106,8 @@ on a server others can reach.
 - Configuration errors name the variable, never the value; a refused database URL never includes the URL. Logs drop
   query strings and write sign-in link tokens and device codes as placeholders; see
   [Monitoring](/self-hosting/monitoring/#what-is-never-logged).
-- Storage over plain `http` is refused unless the storage is on loopback.
+- The server refuses storage over plain `http` unless the storage is on loopback. (The CLI's deletion-ledger export
+  to a bucket doesn't make that check: give it an `https` endpoint.)
 - Development shortcuts refuse to run where others could reach them: `COLOPHON_DEV_MAIL` and the development
   identity provider's public client secret both need a loopback listen address and a `localhost`
   `COLOPHON_PUBLIC_URL`.
@@ -134,7 +136,7 @@ referrer-policy: same-origin
 
 ### The systemd unit
 
-`deploy/production/colophon.service` runs the server with no account on disk and no privileges:
+The systemd unit, `colophon.service`, runs the server with no account on disk and no privileges:
 
 | Setting | What it does |
 |---|---|
@@ -164,8 +166,10 @@ Colophon can't do these for you:
 - **`COLOPHON_TRUSTED_ORIGINS`.** Keep it empty unless people reach the Studio at a second address you control.
 - **A firewall.** Only the proxy's ports should be reachable. PostgreSQL, the cache and the storage's admin API
   must never be public, and the cache in particular has no TLS.
-- **Secrets.** Keep the credential files readable by root only, rotate them if they may have leaked, and restart
-  the server after rotating. Never reuse the development stack's settings or passwords in production, and never set
+- **Secrets.** Keep the credential files readable by root only, rotate them on a schedule and at once if they may
+  have leaked, and restart the server after rotating: secrets are read only at start. `colophon admin init-roles`
+  never changes an existing password, so rotate a database login's password in PostgreSQL itself (see
+  [Database TLS](/self-hosting/database-tls/#two-logins-the-servers-and-the-migration-login)), then update its file. Never reuse the development stack's settings or passwords in production, and never set
   `COLOPHON_ALLOW_PRIVATE_DESTINATIONS` or `COLOPHON_DEV_MAIL` there.
 - **Backups**, their key, and practising a restore: see [Backups and restore](/self-hosting/backups/).
 - **Updates.** Colophon hasn't published a release yet. Keep your clone current, rebuild, and read the

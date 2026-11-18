@@ -106,8 +106,7 @@ counts the first address that isn't trusted. An entry that isn't an address ends
 address that isn't trusted is counted by that address, whatever its `X-Forwarded-For` says, so a client can't
 choose its own count.
 
-The production profile's `deploy/production/colophon.env` sets `COLOPHON_TRUSTED_PROXIES=127.0.0.1/32` for the
-Caddy server in front of it. List only your own proxies, or a CDN's published ranges if it connects directly:
+The production profile sets `COLOPHON_TRUSTED_PROXIES=127.0.0.1/32` for the Caddy server in front of it. List only your own proxies, or a CDN's published ranges if it connects directly:
 a trusted address can claim to forward for anyone.
 
 The same client address is used by the public [live events](/api/live-events/) stream's per-address cap and by

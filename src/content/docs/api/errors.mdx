@@ -69,7 +69,7 @@ An id that breaks those rules is replaced with a fresh one.
 | `404` | `route_not_found` | No route has this path |
 | `405` | `method_not_allowed` | The path exists, not for this method; the `Allow` header lists the ones it takes |
 | `409` | `conflict` | The request conflicts with the current state; `details.reason` says how |
-| `410` | `gone` | Published content that has been taken down (delivery only) |
+| `410` | `gone` | Published content that has been taken down (delivery), or a preview whose publish request has since been published (`preview_published`) |
 | `413` | `payload_too_large` | The body is over the server's limit (21 MiB by default, `COLOPHON_MAX_BODY_BYTES`) |
 | `415` | `unsupported_media_type` | The body needs `Content-Type: application/json` |
 | `422` | `validation_failed` | Well-formed, but it breaks a rule; `details` says which, and where |
@@ -88,6 +88,7 @@ An id that breaks those rules is replaced with a fresh one.
 | Status | `reason` | When |
 |---|---|---|
 | `401` | (none) | Every credential problem is the same `unauthorized`, so a guesser learns nothing |
+| `401` | `preview_invalid`, `preview_revoked`, `preview_expired` | A [preview](/studio/preview/) token that is missing, unknown, ended from the Studio or out of time (`/preview/v1` only) |
 | `403` | `api_token_not_allowed` | An API token on a route kept for people: members, roles, tokens, the activity log, scheduling, previews |
 | `403` | `csrf_token_invalid` | A write with the Studio's session cookie but without the matching `X-CSRF-Token` |
 | `403` | `origin_not_allowed` | A cookie-signed write from an `Origin` the server doesn't trust |
@@ -155,7 +156,7 @@ Validation failures are `422 validation_failed`, and `details.pointer` is a JSON
 | `invalid_generation` | A release that doesn't exist (`?generation=`, `base_generation`) |
 | `ambiguous_local_time`, `skipped_local_time` | A scheduled time the clocks show twice, or skip, in its time zone; `candidates` lists the two instants to choose from |
 | `invalid_url`, `invalid_kind`, `invalid_name`, `invalid_location` | A [website connection](/api/website-connections/#addresses-https-and-public) refused |
-| `invalid_expiry`, `permissions_required`, `too_many_tokens`, `invalid_limit` | An [API token](/api/authentication/#the-errors-you-will-get) refused |
+| `invalid_token_name`, `unknown_token_kind`, `invalid_expiry`, `permissions_required`, `permissions_not_applicable`, `too_many_tokens`, `invalid_limit`, `limits_empty` | An [API token](/api/authentication/#the-errors-you-will-get) refused |
 | `too_large`, `too_deep`, `too_complex`, `fragment_cycle` | A [GraphQL](/api/graphql/#bounds) document over its bounds |
 
 ### Publishing
