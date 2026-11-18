@@ -51,6 +51,8 @@ async function asReaderSeesIt() {
 		}
 		for (const input of document.querySelectorAll('input, textarea')) {
 			if (input.value.includes('colophon_api_')) input.value = input.value.replace(pattern, fake);
+			// The one-time setup code, typed into its field.
+			if (/^[A-Z0-9]{5}(-[A-Z0-9]{5}){3}$/.test(input.value)) input.value = 'EXAMP-LECOD-ENOTR-EAL00';
 		}
 	});
 }
