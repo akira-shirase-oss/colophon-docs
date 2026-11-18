@@ -30,9 +30,14 @@ enough alone.
   that waits up to two seconds and is then refused with `503` and `Retry-After`, before touching the database.
 - **Small bodies before sign-in.** The routes anyone may call with a body before signing in (sign-up, sign-in, the
   CLI's device sign-in, and your site users' sign-up, sign-in and sign-in links) read at most 16 KiB, whatever
-  `COLOPHON_MAX_BODY_BYTES` allows:
+  `COLOPHON_MAX_BODY_BYTES` allows. A 17 KiB sign-in body is refused before it is parsed:
 
-  ```http not-run="todo: shown without its request"
+  ```sh run=ops
+  head -c 17408 /dev/zero | tr '\0' x |
+    curl -i -X POST http://localhost:8080/auth/signin -H 'Content-Type: application/json' --data-binary @-
+  ```
+
+  ```http output=ops
   HTTP/1.1 413 Payload Too Large
   content-type: application/json
   x-request-id: 01a1ee86-b830-70e1-b65b-af6843a786cb
@@ -116,7 +121,12 @@ on a server others can reach.
 
 The Studio is served with headers that stop other sites framing it or sniffing its files:
 
-```http not-run="todo: shown without its request"
+```sh run=ops
+curl -sI http://localhost:8080/studio/ |
+  grep -iE '^(x-content-type-options|x-frame-options|content-security-policy|referrer-policy):'
+```
+
+```http output=ops
 x-content-type-options: nosniff
 x-frame-options: DENY
 content-security-policy: frame-ancestors 'none'

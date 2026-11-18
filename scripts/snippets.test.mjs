@@ -1,7 +1,7 @@
 // The runner's comparison: what changes on every run is normalised away, nothing else is.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { display, normalise } from './snippets.mjs';
+import { display, fences, matches, normalise } from './snippets.mjs';
 
 const answer = (id, date, body) =>
 	`HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: ${id}\r\ncontent-length: ${body.length}\r\ndate: ${date}\r\n\r\n${body}`;
@@ -25,4 +25,35 @@ test('the page may show JSON indented; the comparison is by value and key order'
 	assert.equal(normalise(display(compact)), normalise(compact));
 	assert.match(display(compact), /\n {2}"data": \{\n/);
 	assert.notEqual(normalise(compact), normalise(compact.replace('{"a":1,"b":[1,2]}', '{"b":[1,2],"a":1}')));
+});
+
+test('a blank line before a fence never joins it to the blocks after it', () => {
+	// A stream's answer ends with a blank line, so its closing fence follows one.
+	const page = 'Text.\n\n```sh not-run="x"\ncurl -N http://localhost:8080/events\n```\n\nMore.\n\n```http\nevent: hello\n\n```\n\n- item\n\n  ```ts\n  const a = 1;\n\n  const b = 2;\n  ```\n';
+	const found = fences(page).map((match) => [match[3], match[5]]);
+	assert.deepEqual(found, [
+		['sh', 'curl -N http://localhost:8080/events'],
+		['http', 'event: hello\n'],
+		['ts', '  const a = 1;\n\n  const b = 2;'],
+	]);
+});
+
+test('the page shows numbers exactly as the server wrote them', () => {
+	const float = answer('01a1ee61-d403-73ff-9f17-bfd7ba3edc0f', 'Wed, 18 Nov 2026 11:19:11 GMT', '{"minutes":45.0,"ratio":1.50,"count":3}');
+	assert.match(display(float), /"minutes": 45\.0,/);
+	assert.match(display(float), /"ratio": 1\.50,/);
+	assert.match(display(float), /"count": 3\n/);
+});
+
+test('a paging cursor (REST next_cursor, GraphQL endCursor) does not count; a missing one does', () => {
+	const page = (cursor) => answer('01a1ee61-d403-73ff-9f17-bfd7ba3edc0f', 'Wed, 18 Nov 2026 11:19:11 GMT', `{"next_cursor":${cursor},"data":{"pageInfo":{"endCursor":${cursor}}}}`);
+	assert.equal(normalise(page('"djE6YWFh"')), normalise(page('"djE6YmJi"')));
+	assert.notEqual(normalise(page('"djE6YWFh"')), normalise(page('null')));
+});
+
+test('match=lines: every line the page shows must arrive, in any order; others may come too', () => {
+	const page = { info: ' output=ops match=lines', code: 'event: change\ndata: {"k":"entries"}\n\nevent: hello\ndata: {}' };
+	assert.ok(matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n\nevent: change\ndata: {"k":"entries"}\n', page));
+	assert.ok(!matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n', page));
+	assert.ok(!matches('event: hello\ndata: {}\n', { info: ' output=ops', code: 'event: hello\ndata: {}\nmore' }));
 });

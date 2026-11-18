@@ -5,6 +5,7 @@
 //   ```sh run=quickstart                  a command, run in order in one bash session per suite
 //   ```sh run=cli exit=1                  a command the page shows failing: it must end with that status
 //   ```sh run=cli stderr=1                its standard error is part of its output (an `error:` line)
+//   ```text output=ops match=lines        a stream: every line shown must arrive, in any order
 //   ```http output=quickstart             what the command before it prints; compared after
 //                                          normalising ids, times, secrets and hashes
 //   ```js title="x.mjs" run=quickstart file=x.mjs   written to x.mjs in the current directory
@@ -61,7 +62,11 @@ function mdxFiles(dir) {
 		.sort();
 }
 
-const FENCE = /^(\s*)(`{3,})([\w-]*)([^\n]*)\n([\s\S]*?)\n\1\2[ \t]*$/gm;
+// The indent is spaces and tabs only: `\s` would let a match start on the blank line before a fence and
+// then look for a closing fence after a blank line too, swallowing the blocks in between.
+const FENCE = /^([ \t]*)(`{3,})([\w-]*)([^\n]*)\n([\s\S]*?)\n\1\2[ \t]*$/gm;
+/** Every fenced block in a page's text: `[indent, fence, lang, info, body]` per match. */
+export const fences = (text) => [...text.matchAll(FENCE)];
 const COMMENT = /\{\/\*\s*snippet\s+([\w-]+):\s*(\S+)((?:\s+[^\s*]\S*)*)\s*\*\/\}/g;
 // A key starts the info string or follows a space, so `run=` never matches inside `not-run=`.
 const meta = (text, key) => text.match(new RegExp(`(?:^|\\s)${key}=("([^"]*)"|\\S+)`))?.[2] ?? text.match(new RegExp(`(?:^|\\s)${key}=(\\S+)`))?.[1];
@@ -153,7 +158,7 @@ export function normalise(text) {
 	const flatBody = json === null ? body.trim() : JSON.stringify(json);
 	const all = `${head ?? ''}\n\n${flatBody}`
 		.replace(/colophon_api_[A-Za-z0-9_-]{43}/g, '<api-token>')
-		.replace(/"next_cursor":"[^"]+"/g, '"next_cursor":"<cursor>"')
+		.replace(/"(next_cursor|endCursor)":"[^"]+"/g, '"$1":"<cursor>"')
 		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<uuid>')
 		.replace(/\b[0-9a-f]{32}\b/g, '<hex32>')
 		.replace(/sha256:[0-9a-f]{64}/g, 'sha256:<hash>')
@@ -169,6 +174,20 @@ export function normalise(text) {
 		.replace(/"commit":"[^"]*"/g, '"commit":"<commit>"')
 		.replace(/[ \t]+$/gm, '');
 	return all.trim();
+}
+
+/**
+ * Whether what ran matches the page's output block. Normally the whole normalised text must be equal. With
+ * `match=lines` (a stream, whose frames a server may merge or add to), every line the page shows must be
+ * among the lines that arrived, in any order: the page shows real frames, and losing one still fails.
+ */
+export function matches(actual, expect) {
+	if (meta(expect.info ?? '', 'match') !== 'lines') return normalise(actual) === normalise(expect.code);
+	const seen = new Set(normalise(actual).split('\n'));
+	return normalise(expect.code)
+		.split('\n')
+		.filter((line) => line.trim() !== '')
+		.every((line) => seen.has(line));
 }
 
 // ---------------------------------------------------------------- running a suite
@@ -231,7 +250,7 @@ function runAll(steps) {
 		if (step.kind !== 'run' || !step.expect) return;
 		const actual = readFileSync(join(dir, `${index}.out`), 'utf8');
 		step.actual = actual;
-		if (normalise(actual) !== normalise(step.expect.code)) {
+		if (!matches(actual, step.expect)) {
 			ok = false;
 			console.error(`\nsnippets: ${relative(ROOT, step.file)}: the output differs from the page for:\n${step.code}\n--- the page (normalised)\n${normalise(step.expect.code)}\n--- the server (normalised)\n${normalise(actual)}\n`);
 		}
@@ -243,7 +262,7 @@ function update(steps) {
 	const byFile = new Map();
 	for (const step of steps) {
 		// Only blocks whose output really differs are rewritten, so ids and dates don't churn.
-		if (step.kind === 'run' && step.expect && step.actual !== undefined && normalise(step.actual) !== normalise(step.expect.code)) {
+		if (step.kind === 'run' && step.expect && step.actual !== undefined && !matches(step.actual, step.expect)) {
 			const list = byFile.get(step.file) ?? [];
 			list.push(step.expect.end === undefined ? null : step);
 			byFile.set(step.file, list);

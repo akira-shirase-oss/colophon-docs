@@ -62,14 +62,14 @@ The body of a new connection:
 | `url` | Yes | `https`, a public address, no user name or password in it, at most 2,000 characters |
 | `location` | No | Site checks only: 1 to 63 lowercase letters, digits and dashes |
 
-```sh not-run="todo: makes a connection that later suites would deliver to"
+```sh run=ops
 curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"kind": "webhook", "name": "Site rebuild", "url": "https://build.example.com/hooks/colophon"}'
 ```
 
-```http not-run="todo: the answer to the command above"
+```http output=ops
 HTTP/1.1 201 Created
 content-type: application/json
 x-request-id: 01a1ee89-7894-7169-81e8-c5857e1af4a6
@@ -89,22 +89,24 @@ date: Wed, 18 Nov 2026 12:02:29 GMT
 }
 ```
 
+{/* snippet ops: snippets/from-last.sh DESTINATION=.data.id */}
+
 A new connection is on at once: the next release is announced to it. This route takes no `Idempotency-Key`,
 so sending the same request twice makes two connections.
 
 ### Pause one
 
 `PUT` with `{"enabled": false}` pauses a connection, and `{"enabled": true}` turns it back on. The answer is
-`204 No Content`:
+`204 No Content` (`DESTINATION` is the `id` the create answered):
 
-```sh not-run="todo: changes the connection made above"
-curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations/01a1ee89-7896-7559-80c7-d436038db473" \
+```sh run=ops
+curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations/$DESTINATION" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
 ```
 
-```http not-run="todo: the answer to the command above"
+```http output=ops
 HTTP/1.1 204 No Content
 x-request-id: 01a1ee89-78bf-7187-a333-2476b5c8ef39
 date: Wed, 18 Nov 2026 12:02:29 GMT
@@ -120,14 +122,14 @@ Colophon calls these addresses from your server, so it refuses any that could re
 address must be `https`, must not name a private, loopback, link-local or other non-public IP address, and
 must not carry a user name or password:
 
-```sh not-run="todo: a refusal, not wired into a suite yet"
+```sh run=ops
 curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"kind": "probe", "name": "Home page", "url": "https://192.168.1.20/"}'
 ```
 
-```http not-run="todo: the answer to the command above"
+```http output=ops
 HTTP/1.1 422 Unprocessable Entity
 content-type: application/json
 x-request-id: 01a1ee89-0d80-703d-9528-10797c328e8e
@@ -287,7 +289,7 @@ attempts, a site check 10. A job not finished an hour after it was created fails
 
 List the jobs, newest first, optionally for one release:
 
-```sh not-run="todo: needs a release delivered to a connection"
+```sh run=ops
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/jobs?generation=2" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
@@ -315,12 +317,12 @@ The worker's timing can be tuned: `COLOPHON_WORKER_ATTEMPT_MS` (each attempt's d
 
 Every release has a receipt: what was published, what each connection did, and what each site check saw.
 
-```sh not-run="todo: needs a release delivered to a connection"
+```sh run=ops
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases/1" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
-```json not-run="todo: the answer to the command above"
+```json output=ops
 {
   "data": {
     "generation": 1,

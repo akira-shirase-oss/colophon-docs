@@ -226,16 +226,35 @@ gets one through a browser approval and keeps it in `~/.config/colophon/credenti
 
 A **custom** token lists its permissions. Each is an `action` and a `subject` (`*` or a content type's
 address name), with optional `fields` and `condition: "own"`. This one may read recipes and create new ones,
-and nothing else:
+and nothing else; the answer's `permissions` are exactly what was granted:
 
-```json not-run="todo: a request body shown on its own"
+```sh run=tokens
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/tokens" \
+  -H "Authorization: Bearer $PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Recipe importer",
+    "kind": "custom",
+    "expires_in_days": 7,
+    "permissions": [
+      { "action": "content.read", "subject": "recipes" },
+      { "action": "content.create", "subject": "recipes" }
+    ]
+  }' | jq '{kind: .data.kind, permissions: .data.permissions}'
+```
+
+```json output=tokens
 {
-  "name": "Recipe importer",
   "kind": "custom",
-  "expires_in_days": 7,
   "permissions": [
-    { "action": "content.read", "subject": "recipes" },
-    { "action": "content.create", "subject": "recipes" }
+    {
+      "action": "content.read",
+      "subject": "recipes"
+    },
+    {
+      "action": "content.create",
+      "subject": "recipes"
+    }
   ]
 }
 ```

@@ -42,11 +42,32 @@ down never refuses a request by itself.
 
 ## The answer over a limit
 
-A burst of 330 requests at once with one made-up token: about 300 were admitted (and then refused as
-`401 unauthorized`, since the token doesn't exist), and the last 23 were refused by the per-credential
-limit:
+Send 900 requests at once with one made-up token, keeping each answer in a file. The per-credential burst
+of 300 runs out partway; the requests that get through are then refused as `401 unauthorized`, since the token
+doesn't exist, and the rest are refused by the limit:
 
-```http not-run="todo: needs a burst of requests past the limit"
+```sh run=ops
+TOKEN="colophon_api_$(openssl rand -hex 22 | head -c 43)"   # made up: no such token
+mkdir -p burst
+for i in $(seq 900); do
+  printf 'url = "http://localhost:8080/api/v1/projects/%s/environments/production/collections/recipes/entries"\noutput = "burst/%d"\n' "$PROJECT" "$i"
+done | curl --parallel --parallel-max 100 -s -i -H "Authorization: Bearer $TOKEN" -K -
+grep -h '^HTTP/' burst/* | cut -d' ' -f2- | sort -u
+```
+
+```text output=ops
+401 Unauthorized
+429 Too Many Requests
+```
+
+One of the refusals:
+
+```sh run=ops
+cat "$(grep -l '^HTTP/1.1 429' burst/* | head -n 1)"
+rm -r burst
+```
+
+```http output=ops
 HTTP/1.1 429 Too Many Requests
 content-type: application/json
 retry-after: 1
