@@ -1,8 +1,426 @@
 ---
 title: Errors
-description: "The one error envelope, its codes and the reasons in details."
+description: "The one error envelope every Colophon API answers with: each code and its HTTP status, the reasons in details grouped by situation, the headers that come with errors, and which requests are safe to retry."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+Every Colophon route fails the same way, whether the refusal comes from a handler, a permission check or the
+server's own middleware: an HTTP status and one JSON envelope. This page lists what can be in it, so a client
+can decide what to do without reading the message. ([GraphQL](/api/graphql/#errors) is the one exception once
+a document runs: its errors are GraphQL errors carrying the same codes.)
+
+## The envelope
+
+```json
+{
+  "error": {
+    "code": "conflict",
+    "message": "another release committed first: the environment is now at generation 1; look again, then publish",
+    "details": {
+      "reason": "generation_moved",
+      "pointer": ""
+    },
+    "request_id": "01a1ee8d-f89b-7591-9a1a-f7305e062c87"
+  }
+}
+```
+
+| Member | Always there | What it is |
+|---|---|---|
+| `code` | Yes | The kind of failure, from a fixed list ([below](#codes-and-statuses)). Renaming one is a breaking change |
+| `message` | Yes | A sentence safe to show a person. It may change between versions: never branch on it |
+| `details` | No | Machine-readable detail: `reason`, `pointer` and, for some reasons, more ([below](#what-details-can-carry)) |
+| `request_id` | Yes | The same value as the `x-request-id` response header. Quote it when you report a problem: the server's logs find the request by it |
+
+**Branch on `code`, then on `details.reason`.** `code` says what kind of thing went wrong (a conflict, a
+validation failure); `reason` says which rule. Unknown reasons will appear as Colophon grows, so treat one you
+don't know by its `code`.
+
+You may send your own `x-request-id` (1 to 64 characters of letters, digits, `.`, `_` and `-`), and the server
+uses it instead of making one, so a request can be followed from your logs into Colophon's:
+
+```sh
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/not-a-uuid" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "x-request-id: build-4711.fetch-recipes"
+```
+
+```http
+HTTP/1.1 404 Not Found
+content-type: application/json
+x-request-id: build-4711.fetch-recipes
+content-length: 99
+date: Wed, 18 Nov 2026 12:16:17 GMT
+
+{"error":{"code":"not_found","message":"no such resource","request_id":"build-4711.fetch-recipes"}}
+```
+
+An id that breaks those rules is replaced with a fresh one.
+
+## Codes and statuses
+
+| Status | `code` | Meaning |
+|---|---|---|
+| `400` | `bad_request` | A malformed request no more specific code covers, such as an `If-Match` or `Idempotency-Key` header in the wrong form |
+| `400` | `malformed_json` | The body isn't valid JSON, or holds a member the route doesn't take. The message says where |
+| `400` | `sign_in_failed` | A sign-in failed, was cancelled, or its state ran out or was already used. Deliberately says no more |
+| `401` | `unauthorized` | No credential, or one that is malformed, unknown, revoked or ended |
+| `403` | `forbidden` | Signed in, but not allowed; `details.reason` says why |
+| `404` | `not_found` | No such thing, or one you may not see: the two look the same |
+| `404` | `route_not_found` | No route has this path |
+| `405` | `method_not_allowed` | The path exists, not for this method; the `Allow` header lists the ones it takes |
+| `409` | `conflict` | The request conflicts with the current state; `details.reason` says how |
+| `410` | `gone` | Published content that has been taken down (delivery only) |
+| `413` | `payload_too_large` | The body is over the server's limit (21 MiB by default, `COLOPHON_MAX_BODY_BYTES`) |
+| `415` | `unsupported_media_type` | The body needs `Content-Type: application/json` |
+| `422` | `validation_failed` | Well-formed, but it breaks a rule; `details` says which, and where |
+| `428` | `precondition_required` | A required `If-Match` or `Idempotency-Key` header is missing; the message names it |
+| `429` | `rate_limited` | Too many requests or attempts; `Retry-After` says how many seconds to wait |
+| `500` | `internal` | A bug or an unexpected failure. The cause is logged, never returned |
+| `503` | `unavailable` | Temporarily unable to serve: at capacity, or a service it needs is down |
+| `504` | `deadline_exceeded` | The server didn't produce an answer within its request deadline (10 seconds by default, `COLOPHON_REQUEST_TIMEOUT_MS`) |
+
+## Reasons, by situation
+
+`details.reason` is a stable code. These are the ones you are most likely to meet.
+
+### Signing in and credentials
+
+| Status | `reason` | When |
+|---|---|---|
+| `401` | (none) | Every credential problem is the same `unauthorized`, so a guesser learns nothing |
+| `403` | `api_token_not_allowed` | An API token on a route kept for people: members, roles, tokens, the activity log, scheduling, previews |
+| `403` | `csrf_token_invalid` | A write with the Studio's session cookie but without the matching `X-CSRF-Token` |
+| `403` | `origin_not_allowed` | A cookie-signed write from an `Origin` the server doesn't trust |
+| `403` | `browser_session_required` | Approving a CLI sign-in with anything but a browser session |
+| `403` | `account_disabled` | A site user whose account an owner turned off (said only after the right password) |
+| `400` | `sign_in_failed` (as the code) | A wrong password, an unknown account, or too many guesses from your address: all look the same |
+
+### Permissions
+
+| Status | `reason` | When |
+|---|---|---|
+| `403` | `missing_permission` | Your role or token lacks a permission here; `details.permission` names it, such as `content.publish` |
+| `403` | `cannot_grant` | Giving a role, member or token a power you don't have yourself |
+| `403` | `agent_self_review` | An API token approving a publish request that a token sent for review |
+| `403` | `budget_exceeded` | Over a token's `documents_per_day` or `max_concurrent_jobs` ([limits](/api/authentication/#limits)) |
+| `403` | `fields_not_readable`, `titles_not_readable` | An export, or a list of titles, that needs fields your role can't read |
+| `422` | `field_not_permitted` | A write that changes a field your role may not change; the pointer names it |
+| `422` | `field_not_readable` | A query that filters or sorts on a field your role can't read |
+
+### Preconditions: lost answers and lost updates
+
+| Status | `reason` | When | Comes with |
+|---|---|---|---|
+| `428` | (none) | No `Idempotency-Key` on a write that needs one, or no `If-Match` on a save | |
+| `400` | (none) | `If-Match: *`, or an `If-Match` or `Idempotency-Key` in the wrong form | |
+| `409` | `idempotency_key_reused` | The same key with a different request | |
+| `409` | `stale_revision` | Saving an entry on a revision that is no longer its draft | `ETag`: the current revision |
+| `409` | `stale_version` | Changing a content type or component on an old version | `ETag`: `"v<version>"` now |
+| `409` | `stale_changeset` | Acting on a publish request whose entries changed since you loaded it | `ETag`: its hash now |
+| `409` | `stale_stages` | Changing review stages from an old list | `ETag`: the list now |
+| `409` | `stale_role` | Changing a role on an old version | `ETag`: `"v<version>"` now |
+| `409` | `plan_moved` | Acting on a schema migration plan that changed | `ETag`: its hash now |
+
+The management API's [Idempotency-Key](/api/management/#create-the-idempotency-key-header) and
+[If-Match](/api/management/#save-the-if-match-header) sections show these at work.
+
+### Conflicts with what is stored
+
+| Status | `reason` | When | Comes with |
+|---|---|---|---|
+| `409` | `slug_taken`, `value_taken` | Another entry has this URL name, or this value in a field that must be unique | `entries`: the one that has it, when known |
+| `409` | `still_referenced` | Deleting something other entries still link to | `referenced_by`: those entries |
+| `409` | `entry_in_changeset` | Deleting an entry a publish request would publish | `changesets`: those requests |
+| `409` | `single_exists` | A second entry in a content type that holds only one | |
+| `409` | `locale_taken` | A translation into a language the entry already has | |
+| `409` | `last_owner` | Removing or demoting a project's last owner | |
+| `409` | `role_in_use` | Deleting a role members still hold | |
+| `409` | `migration_in_progress` | Changing or deleting a content type while a schema migration of it runs | |
+| `422` | `needs_migration` | A content type change that stored entries wouldn't fit | `entries` (the first 20) and `total` |
+
+### Validation
+
+Validation failures are `422 validation_failed`, and `details.pointer` is a JSON Pointer to the place in
+**your request body** that is wrong (`/minutes`, `/fields/0`); an empty pointer means the whole body.
+
+| `reason` | When |
+|---|---|
+| `missing_field`, `unknown_field`, `wrong_type` | A required field is absent, a field isn't in the content type, or a value is the wrong kind |
+| `too_long`, `too_short`, `out_of_range`, `too_many` | A value is outside its limits |
+| `not_an_option`, `pattern_mismatch`, `invalid_datetime` | A value isn't one of the choices, doesn't match the field's pattern, or isn't a date |
+| `reference_not_found`, `asset_not_found` | A link to an entry, or an upload, that doesn't exist here |
+| `unsafe_link`, `unknown_node`, `unknown_mark`, `invalid_content`, `too_many_nodes`, `too_many_images` | A rich-text document Colophon won't store |
+| `field_not_indexed`, `invalid_op` | A query filters or sorts on a field that isn't filterable, or uses an operator its kind doesn't take |
+| `invalid_cursor`, `foreign_cursor` | A cursor that is damaged, or belongs to another query |
+| `invalid_generation` | A release that doesn't exist (`?generation=`, `base_generation`) |
+| `ambiguous_local_time`, `skipped_local_time` | A scheduled time the clocks show twice, or skip, in its time zone; `candidates` lists the two instants to choose from |
+| `invalid_url`, `invalid_kind`, `invalid_name`, `invalid_location` | A [website connection](/api/website-connections/#addresses-https-and-public) refused |
+| `invalid_expiry`, `permissions_required`, `too_many_tokens`, `invalid_limit` | An [API token](/api/authentication/#the-errors-you-will-get) refused |
+| `too_large`, `too_deep`, `too_complex`, `fragment_cycle` | A [GraphQL](/api/graphql/#bounds) document over its bounds |
+
+### Publishing
+
+| Status | `reason` | When | Comes with |
+|---|---|---|---|
+| `409` | `generation_moved` | Another release committed after the `base_generation` you sent | `Colophon-Generation`: the release now |
+| `409` | `not_approved` | Publishing a request that hasn't been approved | |
+| `409` | `approval_expired` | The approval ran out; it needs reviewing again | |
+| `409` | `entries_moved_on` | An entry moved on after the request pinned it; refresh and review again | |
+| `409` | `already_published` | Publishing a request a second time | |
+| `409` | `references_unpublished` | An entry links to one that isn't published; publish both together | |
+| `409` | `revision_outdated` | A pinned revision no longer fits its content type | `entries`, with each one's `problem` |
+| `422` | `stage_required`, `unknown_stage` | An approval that must, or can't, name a review stage | |
+
+### Rate limits and capacity
+
+| Status | `reason` | When | Comes with |
+|---|---|---|---|
+| `429` | `rate_limited` | Over a request limit, a token's `requests_per_minute`, or a live event stream cap | `Retry-After` in seconds |
+| `429` | (none) | Too many sign-in links asked for, or setup code attempts; the message counts in minutes | `Retry-After` in seconds |
+| `503` | (none) | No database connection or password-hashing slot came free in time: "the server is busy" | `Retry-After: 1` |
+| `503` | `work_full`, `payload_full` | The project's unfinished background work, or the server's, is at its bound | `Retry-After: 5` |
+| `503` | (none) | A server carrying as many event streams or MCP sessions as it can, or a service it needs (the object store, the identity provider) unreachable | |
+
+See [Rate limits](/api/rate-limits/) for what is counted.
+
+## What `details` can carry
+
+`reason` and `pointer` are in every `details`. Some reasons add more:
+
+| Member | With | What it holds |
+|---|---|---|
+| `permission` | `missing_permission` | The permission you lack, as roles name it |
+| `entries` | `needs_migration`, `slug_taken`, `value_taken`, `revision_outdated` | Entries in the way: `entry`, `title`, `state` (`draft`, `published` or `pinned`) and, for content changes, `problem` (`reason`, `pointer` into the entry's content, `message`) |
+| `total` | `needs_migration` | How many entries are in the way in all, when `entries` lists only the first 20 |
+| `content_type` | A component change | The content type whose entries are in the way |
+| `referenced_by` | `still_referenced` | The entries that still link to it: `entry_id`, `collection`, `field`, `in_draft`, `published` |
+| `changesets` | `entry_in_changeset` | The publish requests that would publish it: `id`, `title`, `scheduled` |
+| `candidates` | `ambiguous_local_time`, `skipped_local_time` | The two instants, earlier first, as RFC 3339 |
+
+## Headers that come with errors
+
+| Header | On | Use it to |
+|---|---|---|
+| `x-request-id` | Every response | Quote the request; it equals `request_id` |
+| `Retry-After` | `429`, and `503` when the server is busy or its work is full | Wait that many seconds before trying again |
+| `ETag` | `409` stale refusals (`stale_revision`, `stale_version`, …) | Know the current version: read it, merge your change, send that value as `If-Match` |
+| `Colophon-Generation` | `409 generation_moved`, and every delivery answer | Know the release the environment is at now |
+| `Allow` | `405` | See the methods the path takes |
+| `Cache-Control: no-store` | `410 gone` | Keep caches from remembering a take-down |
+
+## Real refusals
+
+**A write without an `Idempotency-Key`:**
+
+```sh
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dish": "Scones", "minutes": 25}'
+```
+
+```http
+HTTP/1.1 428 Precondition Required
+content-type: application/json
+x-request-id: 01a1ee92-9555-77ad-8c4f-f30266998c90
+content-length: 151
+date: Wed, 18 Nov 2026 12:12:26 GMT
+
+{
+  "error": {
+    "code": "precondition_required",
+    "message": "this request needs an Idempotency-Key header",
+    "request_id": "01a1ee92-9555-77ad-8c4f-f30266998c90"
+  }
+}
+```
+
+**Publishing on top of a release that is no longer the newest.** The environment was at release 1; the
+request said `"base_generation": 0`:
+
+```http
+HTTP/1.1 409 Conflict
+content-type: application/json
+colophon-generation: 1
+x-request-id: 01a1ee8d-f89b-7591-9a1a-f7305e062c87
+content-length: 244
+date: Wed, 18 Nov 2026 12:07:24 GMT
+
+{
+  "error": {
+    "code": "conflict",
+    "message": "another release committed first: the environment is now at generation 1; look again, then publish",
+    "details": {
+      "reason": "generation_moved",
+      "pointer": ""
+    },
+    "request_id": "01a1ee8d-f89b-7591-9a1a-f7305e062c87"
+  }
+}
+```
+
+Look at what release 1 changed, then publish again with `"base_generation": 1`.
+
+**A content type change that stored entries wouldn't fit.** Limiting `dish` to 10 characters, with a
+token that may change content types:
+
+```sh
+curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: "v3"' \
+  -H "Idempotency-Key: errors-shorter-dish-1" \
+  -d '{"name": "Recipes", "title_field": "dish", "fields": [
+        {"id": "dish", "label": "Dish", "type": "text", "required": true, "max_chars": 10, "multiline": false},
+        {"id": "minutes", "label": "Minutes", "type": "number", "required": false, "integer": true, "index": true},
+        {"id": "method", "label": "Method", "type": "rich_text", "required": false}]}'
+```
+
+<details>
+<summary>Response: <code>422</code>, naming each entry in the way and why</summary>
+
+```http
+HTTP/1.1 422 Unprocessable Entity
+content-type: application/json
+x-request-id: 01a1ee92-b0c7-77e5-9e51-909722d6ebee
+content-length: 1219
+date: Wed, 18 Nov 2026 12:12:33 GMT
+
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "this change to `dish` would make stored content invalid: 5 entries are in the way; change them first, or keep the old definition",
+    "details": {
+      "reason": "needs_migration",
+      "pointer": "/fields/0",
+      "entries": [
+        {
+          "entry": "01a1ee84-8d1c-760a-82a7-f39ca86a9e1b",
+          "title": "Ginger biscuits",
+          "state": "draft",
+          "problem": {
+            "reason": "too_long",
+            "pointer": "/dish",
+            "message": "Dish is at most 10 characters"
+          }
+        },
+        {
+          "entry": "01a1ee85-afa4-779f-895f-42780642e364",
+          "title": "Bakewell tart",
+          "state": "draft",
+          "problem": {
+            "reason": "too_long",
+            "pointer": "/dish",
+            "message": "Dish is at most 10 characters"
+          }
+        },
+        {
+          "entry": "01a1ee85-d1b6-7564-994a-65b55a75b012",
+          "title": "Treacle tart",
+          "state": "draft",
+          "problem": {
+            "reason": "too_long",
+            "pointer": "/dish",
+            "message": "Dish is at most 10 characters"
+          }
+        },
+        {
+          "entry": "01a1ee86-e419-766d-bf99-9094106e5799",
+          "title": "Bakewell tart",
+          "state": "draft",
+          "problem": {
+            "reason": "too_long",
+            "pointer": "/dish",
+            "message": "Dish is at most 10 characters"
+          }
+        },
+        {
+          "entry": "01a1ee88-5797-75c8-a330-100cf0e41491",
+          "title": "Eccles cakes",
+          "state": "draft",
+          "problem": {
+            "reason": "too_long",
+            "pointer": "/dish",
+            "message": "Dish is at most 10 characters"
+          }
+        }
+      ],
+      "total": 5
+    },
+    "request_id": "01a1ee92-b0c7-77e5-9e51-909722d6ebee"
+  }
+}
+```
+
+</details>
+
+`details.pointer` points into the request body (the first field), and each entry's `problem.pointer` into
+that entry's content. Nothing was changed.
+
+**A method the path doesn't take:**
+
+```sh
+curl -i -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+```http
+HTTP/1.1 405 Method Not Allowed
+content-type: application/json
+x-request-id: 01a1ee96-1ccf-7496-9d5b-bdc22b481e7b
+allow: GET,HEAD,POST
+content-length: 122
+date: Wed, 18 Nov 2026 12:16:17 GMT
+
+{
+  "error": {
+    "code": "method_not_allowed",
+    "message": "method not allowed",
+    "request_id": "01a1ee96-1ccf-7496-9d5b-bdc22b481e7b"
+  }
+}
+```
+
+More refusals are shown where they belong: `401` and `403` on [Authentication](/api/authentication/#the-errors-you-will-get),
+`409` and `422` on [Management API](/api/management/), `410` on [Delivery API](/api/delivery/#taken-down-content),
+and `429` on [Rate limits](/api/rate-limits/).
+
+## Retrying
+
+Some failures say nothing was decided, and the same request may go again. Others will answer the same way
+every time until something changes.
+
+| Retry? | Failures |
+|---|---|
+| **Yes, as it is** | No answer at all (a dropped connection, a client timeout), `429`, `503`, `504`, `500` |
+| **After reading again** | `409` stale refusals and `generation_moved`: read the current version (the `ETag` or `Colophon-Generation` header names it), merge or check, then send a new request |
+| **No** | Every other `4xx`: fix the request first |
+
+Two rules make retrying writes safe:
+
+- **Wait as told.** After a `429` or a `503` with `Retry-After`, wait at least that many seconds. Without one,
+  back off: wait a second, then two, then four, with some randomness, and give up after a few tries.
+- **Keep the `Idempotency-Key`.** A write that timed out may have happened. Send the retry with the **same**
+  key and the same body: if the first one committed, you get its answer back (with
+  `idempotent-replayed: true`) and nothing is written twice; if it didn't, it happens now. Only successes are remembered, so after
+  a refusal you fix the request and may use a new key.
+
+The [SDK](/sdk/) does the reading for you: every failure is an `ApiError` with `status`, `code`, `reason`,
+`pointer`, `requestId`, `etag` (the current version on a conflict), `retryAfterMs` (`Retry-After` in
+milliseconds, at most a minute) and `retryable`, which is true for no answer, `429` and any `5xx`: the "yes,
+as it is" row above.
+
+```ts
+import { ApiError } from '@colophon-cms/sdk';
+
+try {
+  await save();
+} catch (error) {
+  if (error instanceof ApiError && error.retryable) {
+    await new Promise((resolve) => setTimeout(resolve, error.retryAfterMs ?? 1_000));
+    await save(); // the same call, with the same idempotency key
+  } else {
+    throw error;
+  }
+}
+```

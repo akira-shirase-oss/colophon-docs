@@ -1,8 +1,340 @@
 ---
 title: Live events
-description: "Server-sent events that tell a site or tool that content changed."
+description: "Two server-sent event streams that say content changed, so a site or tool reads again instead of polling: the public one for published content, and the signed-in one that names what changed."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+Colophon has two streams of [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+that tell a client *that* something changed, so it can read again instead of asking every few seconds.
+Neither carries content and neither replays what you missed: a frame is a hint to read again through the API
+you already use.
+
+| | Public stream | Signed-in stream |
+|---|---|---|
+| Path | `GET /content/v1/{project}/{environment}/events` | `GET /api/v1/projects/{project}/environments/{environment}/events` |
+| Credential | None | An API token or a person's sign-in |
+| Says | Published content changed | Which kind of thing changed, and in which content type |
+| For | Websites showing published content | The Studio, editorial tools, build servers |
+
+Both answer `text/event-stream` and send `x-accel-buffering: no`, which asks a buffering proxy such as nginx to
+pass each event on at once. A stream that ends is opened again by the client; nothing is lost by that, since
+the first frame of every stream is a cue to read everything again.
+
+## The public stream
+
+```sh
+curl -N "http://localhost:8080/content/v1/$PROJECT/production/events"
+```
+
+`-N` keeps curl from buffering. Here the stream was opened, and a publish request was published two seconds
+later:
+
+```http
+HTTP/1.1 200 OK
+content-type: text/event-stream
+cache-control: no-store
+x-accel-buffering: no
+x-request-id: 01a1ee8e-1902-755a-82b0-9947b6c1cbc4
+transfer-encoding: chunked
+date: Wed, 18 Nov 2026 12:07:32 GMT
+
+event: hello
+data: {}
+
+event: change
+data: {}
+
+```
+
+| Event | When | What to do |
+|---|---|---|
+| `hello` | First, as soon as the stream is open | Read what you show, since something may have changed before the stream opened |
+| `change` | After a release in this environment | Read again |
+
+That is all it ever says. A `change` frame names no entry, content type or release, so an entry gated to some
+readers can't be detected through it. Hints that arrive together become one frame: a release and the
+bookkeeping that follows it in the same moment are one `change`. A `change` can also follow work that
+publishes nothing new (a release's website connection deliveries and site checks moving on, or a bulk edit of
+drafts), so read the release number before re-rendering: a `HEAD` of any delivery list answers `colophon-generation`, and only a
+higher number than the one you have means new content. Unchanged answers cost little, too: send the `ETag`
+you have as `If-None-Match` and an unchanged read is `304`.
+
+A missing project or environment is `404`, before any stream opens.
+
+### Listen from your site's server
+
+The stream is anonymous, but Colophon sends no CORS headers on `/content/v1`, so a browser lets a page open it
+only when the page comes from the same origin as Colophon (for example, your site and Colophon behind one
+reverse proxy on one host). There is also a cap of 256 public streams per project on each server. So the
+pattern that scales is one connection from your site's server, fanned out to its visitors: Colophon holds one
+stream per site server, not one per reader.
+
+A reader for Node.js 18 or later, with only `fetch`. (`EventSource` isn't built into Node.js, and can't read a
+refusal's status or `Retry-After`.) It keeps the newest release number it has seen and tells its listeners
+only when that number goes up:
+
+```ts
+const CMS = 'http://localhost:8080';
+const PROJECT = process.env.PROJECT!;
+const delivery = `${CMS}/content/v1/${PROJECT}/production`;
+
+let generation = 0;
+const listeners = new Set<(generation: number) => void>();
+
+/** Reads the newest release number; tells listeners only when it moved forward. */
+async function refresh(): Promise<void> {
+  const response = await fetch(`${delivery}/recipes?limit=1`, { method: 'HEAD' });
+  const next = Number(response.headers.get('colophon-generation'));
+  if (Number.isSafeInteger(next) && next > generation) {
+    generation = next;
+    for (const listener of listeners) listener(next);
+  }
+}
+
+/** Reads one stream until it ends, calling `refresh` on every frame. */
+async function listen(): Promise<void> {
+  const response = await fetch(`${delivery}/events`, {
+    headers: { accept: 'text/event-stream' },
+  });
+  if (!response.ok || response.body === null) {
+    throw new Error(`events: HTTP ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return; // the stream reached its lifetime
+    buffer += decoder.decode(value, { stream: true });
+    let end = buffer.indexOf('\n\n'); // a blank line ends each frame
+    while (end >= 0) {
+      const frame = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      if (/^event: (hello|change)$/m.test(frame)) void refresh().catch(() => {});
+      end = buffer.indexOf('\n\n');
+    }
+  }
+}
+
+/** Keeps one stream open for as long as the process runs. */
+export async function run(): Promise<void> {
+  for (;;) {
+    try {
+      await listen();
+    } catch (error) {
+      console.error(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
+```
+
+Each open page of your site subscribes to your server (through an event stream of your own, or any push
+channel you already have) by adding a listener, and reloads or re-renders when the release number moves.
+
+### In a browser, on the same origin
+
+When the page and Colophon do share an origin, `EventSource` works as it is, and reconnects by itself when a
+stream ends:
+
+```js
+const project = '01a1ee81-136e-7520-8834-f234ae0c0baf';
+const events = new EventSource(`/content/v1/${project}/production/events`);
+
+events.addEventListener('hello', () => refreshPage());
+events.addEventListener('change', () => refreshPage());
+```
+
+Here `refreshPage` is your own function: fetch what the page shows from the delivery API and draw it again.
+
+### Public stream limits
+
+| Limit | Default | Over it | Setting |
+|---|---|---|---|
+| Streams from one client address | 8 | `429 rate_limited`, `Retry-After: 30` | `COLOPHON_EVENTS_PUBLIC_PER_ADDRESS` |
+| Public streams of one project, on one server | 256 | `503 unavailable` | `COLOPHON_EVENTS_PUBLIC_PER_PROJECT` |
+| Public streams on one server | 2,048 | `503 unavailable` | `COLOPHON_EVENTS_PUBLIC_MAX_STREAMS` |
+
+Public streams have a budget of their own, so anonymous listeners can never use up the streams editors need.
+The client address is the one [rate limits](/api/rate-limits/) count by: behind a reverse proxy, set
+`COLOPHON_TRUSTED_PROXIES`, or every visitor shares the proxy's address and its 8 streams. Opening a stream is
+one delivery request for the rate limit; the open stream costs nothing more.
+
+## The signed-in stream
+
+The signed-in stream is for tools that show drafts and editorial work: it says what kind of thing changed and,
+for entries, comments and tasks, in which content type. Any credential that may read the project's
+environment can open it, an API token included:
+
+```sh
+curl -N "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+Here the stream was opened, a draft recipe was saved two seconds later, and the stream was left open for
+another 16 seconds:
+
+```http
+HTTP/1.1 200 OK
+content-type: text/event-stream
+cache-control: no-cache
+x-accel-buffering: no
+x-request-id: 01a1ee8d-2bf8-73b1-90fb-bd2b41938192
+transfer-encoding: chunked
+date: Wed, 18 Nov 2026 12:06:31 GMT
+
+event: hello
+data: {}
+
+event: change
+data: {"k":"tokens"}
+
+event: change
+data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
+
+: keep-alive
+
+```
+
+And with a publish instead of a save, the same stream carried:
+
+```text
+event: change
+data: {"e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"releases"}
+
+event: change
+data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
+```
+
+### Frames
+
+| Event | Data | Meaning |
+|---|---|---|
+| `hello` | `{}` | The stream is open. Read what you show: something may have changed before it opened |
+| `change` | `{"k", "c"?, "e"?}` | Something of kind `k` changed. Read it again |
+| `resync` | `{}` | Hints may have been missed. Read everything you show again |
+| `: keep-alive` | | A comment line every 15 seconds, so proxies don't close an idle connection. Ignore it |
+
+In a `change`:
+
+- **`k`** is the kind: `entries` (drafts, and what readers get), `types`, `components`, `changesets`
+  (publish requests and their reviews), `stages` (review stages), `releases` (releases, and their delivery
+  jobs and site checks), `schedules`, `tasks`, `comments`, `migrations`, `assets` (the media library),
+  `members` (members and invitations), `roles`, `tokens`, `destinations` (website connections) or `audit`
+  (the activity log).
+- **`c`** is the content type's address name, for `entries`, `comments` and `tasks` only.
+- **`e`** is the environment's **id**, not its name. It is absent for changes that belong to the project
+  rather than one environment: members, roles, tokens and the activity log. A stream hears the changes of its
+  own environment and the project's.
+
+Hints go out in passes about every 100 milliseconds, after the changes they describe have committed. Within a
+pass each distinct hint is sent once, so a burst of saves to one content type is one `change`, and the last
+change is always reported. Count nothing: on each frame, read again what that kind and content type cover.
+
+### What it doesn't do
+
+- **No replay.** Events carry no `id`, and a `Last-Event-ID` header is accepted and ignored. A client that
+  falls behind (more than 256 hints buffered for it) gets one `resync` instead of the hints, and so does every
+  stream when the server's own connection to the database is re-established. After `resync`, read everything
+  again.
+- **No content.** A hint never carries a title, a value or an id; you read through the API with the
+  permissions you already have.
+- **No lasting connection.** A stream ends after 30 minutes; open it again. Every 5 minutes the server checks
+  the credential again, and a stream whose token was revoked or whose member was removed ends then.
+
+### From a server
+
+`EventSource` can't send an `Authorization` header, so a script, build server or other tool reads the stream
+with `fetch`, as in the [public example](#listen-from-your-sites-server), adding the header and handling the
+three event names:
+
+```ts
+const url = `http://localhost:8080/api/v1/projects/${process.env.PROJECT}/environments/production/events`;
+
+type Hint = { k: string; c?: string; e?: string };
+
+/** Reads one stream until it ends; calls `onHint` for each change, `onReload` for hello and resync. */
+async function listen(onHint: (hint: Hint) => void, onReload: () => void): Promise<void> {
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${process.env.COLOPHON_TOKEN}`,
+      accept: 'text/event-stream',
+    },
+  });
+  if (response.status === 429 || response.status === 503) {
+    const seconds = Number(response.headers.get('retry-after') ?? '30');
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1_000));
+    return;
+  }
+  if (!response.ok || response.body === null) {
+    throw new Error(`events: HTTP ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let end = buffer.indexOf('\n\n');
+    while (end >= 0) {
+      const lines = buffer.slice(0, end).split('\n');
+      buffer = buffer.slice(end + 2);
+      const event = lines.find((line) => line.startsWith('event: '))?.slice(7);
+      const data = lines.find((line) => line.startsWith('data: '))?.slice(6);
+      if (event === 'hello' || event === 'resync') onReload();
+      else if (event === 'change' && data !== undefined) onHint(JSON.parse(data) as Hint);
+      end = buffer.indexOf('\n\n');
+    }
+  }
+}
+```
+
+Run it in a loop that opens the stream again whenever `listen` returns or throws, as the public example's
+`run` does. Keep the token on the server: see [Keep tokens on a server](/api/authentication/#keep-tokens-on-a-server).
+
+### Signed-in stream limits
+
+| Limit | Default | Over it | Setting |
+|---|---|---|---|
+| Streams one credential (a token or a sign-in) holds | 8 | `429 rate_limited`, `Retry-After: 30` | `COLOPHON_EVENTS_PER_CREDENTIAL` |
+| Signed-in streams of one project, on one server | 256 | `503 unavailable` | `COLOPHON_EVENTS_PER_PROJECT` |
+| Signed-in streams on one server | 2,048 | `503 unavailable` | `COLOPHON_EVENTS_MAX_STREAMS` |
+
+A ninth stream on the same token, while eight are open:
+
+```http
+HTTP/1.1 429 Too Many Requests
+content-type: application/json
+retry-after: 30
+x-request-id: 01a1ee8e-64c4-716f-b819-97baebf570ea
+content-length: 191
+date: Wed, 18 Nov 2026 12:07:51 GMT
+
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "too many requests; try again in 30 second(s)",
+    "details": {
+      "reason": "rate_limited",
+      "pointer": ""
+    },
+    "request_id": "01a1ee8e-64c4-716f-b819-97baebf570ea"
+  }
+}
+```
+
+Without a credential the answer is `401`, and a project the credential can't reach is `404`. Opening a
+signed-in stream counts once against the management API's [rate limits](/api/rate-limits/).
+
+## Settings for operators
+
+Both streams share these, set in the server's environment (see [Configuration](/self-hosting/configuration/)):
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_EVENTS_KEEPALIVE_MS` | `15000` | How often the keep-alive comment is sent |
+| `COLOPHON_EVENTS_LIFETIME_MS` | `1800000` (30 minutes) | How long one stream lives before it ends |
+| `COLOPHON_EVENTS_REVALIDATE_MS` | `300000` (5 minutes) | How often a signed-in stream checks its credential again; `0` turns the check off |
+| `COLOPHON_EVENTS_CHANNEL_CAPACITY` | `256` | Hints buffered per project before a slow stream is sent `resync` |
+
+The stream limits are per server: with several servers behind a load balancer, each carries its own.

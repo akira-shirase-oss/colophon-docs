@@ -1,8 +1,61 @@
 ---
 title: History and restore
-description: "Every saved version of an entry, and bringing an older one back."
+description: "The History tab lists every saved version of an entry; compare any of them with the draft, and restore an older one as a new draft without losing anything."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+import { Steps } from '@astrojs/starlight/components';
+
+Every save makes a new version of an entry, and Colophon never writes over an old one. The **History**
+tab lists them all, so a writer can see what changed and bring an earlier version back.
+
+## See an entry's versions
+
+Open the entry and press **History**. The number on the tab is how many versions it has.
+
+The newest version is at the top, marked **Current draft**. The version readers get is marked with its
+release, for example **Live in Release 2**. Each line shows the entry's title as it was then and when it was saved; hold the pointer
+over *Saved 4 minutes ago* to see the exact time.
+
+## Compare a version with the draft
+
+<Steps>
+
+1. Press **Compare with draft** on an older version.
+
+2. The comparison opens under it: each field that differs, with the older value struck through and the
+   draft's value beside it, and how many fields are unchanged.
+
+3. Press **Hide** to close it.
+
+</Steps>
+
+![The History tab: the Current draft at the top, then the version that is live, compared with the draft: Minutes 45 struck through and 55 in the draft, 4 other fields unchanged, with Hide and Restore this version](/screens/studio/history.webp)
+
+The comparison is with what is on your screen now, including changes still being saved.
+
+## Restore an older version
+
+<Steps>
+
+1. Wait until the side panel says **Saved**: restoring is offered only when your changes are saved.
+
+2. Press **Restore this version** on the version you want back.
+
+3. Its fields fill the editor and are saved at once, as a **new** version on top of the current one.
+
+</Steps>
+
+The editor confirms: *Restored the version saved 4 minutes ago, as a new version. The newer ones stay in
+the history.* Nothing is lost, so a restore can itself be undone by restoring the version before it.
+
+Restoring changes the draft only. If the entry is live, readers keep getting the published version
+until you publish again: see [Publishing and review](/studio/publishing/).
+
+Fields your role can't change keep their current values, and fields your role can't see are never
+sent, so a restore never touches what you aren't allowed to edit. If every field is read-only for you,
+**Restore this version** isn't shown.
+
+:::note[Restoring a whole release]
+History works on one entry. To put back everything an earlier release published, use
+[Rollback](/studio/rollback/).
 :::

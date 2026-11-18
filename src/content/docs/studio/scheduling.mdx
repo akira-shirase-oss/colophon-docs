@@ -1,8 +1,88 @@
 ---
 title: Scheduling
-description: "Publish at a set time, in a named time zone."
+description: "Scheduling an approved publish request for a local time in a named time zone, choosing when the clocks change, what a delayed or blocked schedule means, and cancelling one."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+import { Steps } from '@astrojs/starlight/components';
+
+A schedule publishes an approved publish request later, at a time you choose, exactly as if you
+pressed **Publish** then. This page is for whoever publishes: scheduling needs the same permission as
+publishing.
+
+## Schedule a publish request
+
+<Steps>
+
+1. Get the request approved. Until then its **Schedule** panel says *Once it's approved, it can be
+   scheduled to publish at a time you choose.* See [Publishing and review](/studio/publishing/).
+
+2. Open the request. Under **Schedule** (*Publish this exact version later, at a time you choose.*),
+   set the **Date**, the **Time** and the **Time zone**. The panel suggests tomorrow at 09:00 in your
+   own time zone, marked **(yours)**.
+
+   ![The Schedule panel: the Date set to tomorrow, Time 09:00, Time zone Europe/London, and the Schedule button](/screens/studio/schedule-form.webp)
+
+3. Press **Schedule**.
+
+</Steps>
+
+The panel now says when it publishes, in the time zone you chose and, if that isn't yours, where you
+are:
+
+![The Schedule panel once scheduled: Publishes tomorrow at 09:00:00 GMT+0 (Europe/London), the same moment in UTC where you are, Scheduled by Akira Shirase, just now, and the Cancel the schedule button](/screens/studio/schedule-pending.webp)
+
+The **Releases** page lists every pending schedule, and the last ones that ran, under **Scheduled**.
+
+### Why a time zone
+
+A schedule keeps the local time and the named time zone you chose (`Europe/London`, not an offset like
+`+01:00`). 09:00 in London stays 09:00 in London whether the clocks are on summer time or not, and
+your colleagues see the moment in their own time too.
+
+## When the clocks change
+
+Twice a year, many time zones have a time that happens twice (the clocks go back) or not at all (they
+go forward). Colophon never guesses which moment you meant. If the time you chose is one of those,
+**Schedule** asks:
+
+![The clocks go back that night in Europe/London, so 01:30 happens twice. Which one? Two choices, Sunday 31 October 2027 at 01:30:00 BST and at 01:30:00 GMT+0, and the Schedule at this moment button](/screens/studio/schedule-choice.webp)
+
+- *The clocks go back that night in …, so 01:30 happens twice. Which one?* Pick the first or the
+  second 01:30.
+- *The clocks go forward that night in …, so 01:30 doesn't happen. Publish at:* pick the moment just
+  before or just after the gap.
+
+Then press **Schedule at this moment**. Changing the time zone clears the question.
+
+## The limits
+
+- The time must be in the future, and at most a year and a day ahead.
+- It must be before the approval expires. An approval lasts seven days, so a request approved today can
+  be scheduled up to seven days from the approval; for a later date, have it approved closer to the
+  time. Otherwise: *The approval expires before that time; schedule it earlier, or have it approved
+  closer to the time.*
+- A request has one pending schedule at a time: *It is already scheduled. Cancel that schedule to
+  choose another time.*
+
+## When it runs
+
+At the chosen moment Colophon publishes the request as the person who scheduled it, with every check a
+publish makes, on top of whatever is live then. The schedule's history in the panel, and the
+**Scheduled** list on **Releases**, then says how it went:
+
+| It says | Means |
+|---|---|
+| *Published on time, as release 12* | Done. |
+| *Published late, as release 12*, marked **delayed** | It started more than a minute after the chosen time, for example because Colophon was stopped then. It still published. |
+| *Not published: …* | It was **blocked**, and published nothing. The reason follows. |
+
+A schedule is blocked, never half-done, when publishing would be refused at that moment: an entry in
+the request was saved again, the approval expired, the person who scheduled it can no longer publish
+(their role changed or they left the project), or a value another published entry holds, such as a URL
+name, is in the way. Fix the cause, get the request approved again, and schedule it again.
+
+## Cancel a schedule
+
+Press **Cancel the schedule**. The person who scheduled it, or anyone who may publish the request, can
+cancel it; anyone else sees *Its author or someone who can publish it can cancel it.* Cancelling never
+undoes a release: a schedule that already published stays published.

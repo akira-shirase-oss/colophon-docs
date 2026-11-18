@@ -1,8 +1,201 @@
 ---
 title: Security notes
-description: "What Colophon defends against, and what an operator still owns."
+description: "What Colophon itself does to protect accounts, content and the host it runs on, what an operator still has to do, and how to report a vulnerability."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+This page is for operators: what Colophon does on its own to protect your accounts, content and server, and what
+it leaves to you. Read both halves. Colophon's protections assume the operator's part is done; neither half is
+enough alone.
+
+## What Colophon does
+
+### Sign-in and sessions
+
+- **Session cookies.** Signing in to the Studio sets `colophon_session`: a random token, of which the database
+  keeps only a hash. The cookie is `HttpOnly` (scripts can't read it), `Secure` and `SameSite=Lax`. A session ends
+  12 hours after sign-in or after 2 hours unused, and signing out ends it on the next request.
+- **Writes need two proofs.** Any change made with a session cookie (anything but `GET`, `HEAD` and `OPTIONS`) must
+  send the session's CSRF token in `X-CSRF-Token` **and** come from an `Origin` the server trusts exactly:
+  `COLOPHON_PUBLIC_URL`, plus any in `COLOPHON_TRUSTED_ORIGINS`. Otherwise it is refused with `403`. Bearer tokens
+  need neither, because a browser never attaches them on its own.
+- **Passwords** are hashed with Argon2id (19 MiB of memory, two passes) and only compared, never returned. A
+  password is 8 characters to 512 bytes. A wrong password and an unknown email get the same answer after the same
+  amount of work, so sign-in doesn't reveal who has an account.
+- **Guessing is bounded.** Each attempt is counted before any hashing, per account and client address. The eighth
+  attempt pauses that pair for 15 minutes; during the pause even the right password is refused with the same answer
+  as a wrong one. Fifty misses in an hour from addresses that have never signed in to an account pause every such
+  address for it for the rest of the hour, while addresses the owner has signed in from keep working. A guesser
+  pauses only their own address, never one the owner uses.
+- **Password work is bounded.** Hashing runs at most `COLOPHON_PASSWORD_CONCURRENCY` jobs at once; a burst past
+  that waits up to two seconds and is then refused with `503` and `Retry-After`, before touching the database.
+- **Small bodies before sign-in.** The routes anyone may call with a body before signing in (sign-up, sign-in, the
+  CLI's device sign-in, and your site users' sign-up, sign-in and sign-in links) read at most 16 KiB, whatever
+  `COLOPHON_MAX_BODY_BYTES` allows:
+
+  ```http
+  HTTP/1.1 413 Payload Too Large
+  content-type: application/json
+  x-request-id: 01a1ee86-b830-70e1-b65b-af6843a786cb
+  content-length: 120
+  date: Wed, 18 Nov 2026 11:59:28 GMT
+
+  {"error":{"code":"payload_too_large","message":"payload too large","request_id":"01a1ee86-b830-70e1-b65b-af6843a786cb"}}
+  ```
+
+- **The first administrator** is made with a one-time setup code that the server prints to its own log. It works
+  once, for an hour, and only its hash is stored.
+
+Colophon has no second sign-in factor for its own password accounts. If you need one, have people sign in through
+an identity provider that enforces it (the `COLOPHON_OIDC_*` settings).
+
+### API tokens
+
+- A project API token (`colophon_api_` and 43 random characters) is shown once; the database keeps only its SHA-256
+  hash. Personal access tokens from `colophon login` are stored hashed too, and last 30 days.
+- A token works only on its own project's content. Another project's routes answer `404`, as if they didn't exist,
+  and no token can manage members, roles or tokens, or read the activity log: a leaked token can't raise anyone's
+  powers or hide what it did.
+- **Revoking is exact.** Revocation waits for the requests already running under the token, and once it has
+  committed no new request with it starts. Everything the token did stays in the activity log.
+
+[Authentication & API tokens](/api/authentication/) covers scopes, expiry and revoking.
+
+### The database
+
+- The server connects as `colophon_app`, which owns no tables and can't bypass row-level security. Migrations run
+  separately, as the table owner, only when you run `colophon admin migrate`.
+- **Row-level security** scopes every transaction to one project, so a forged id can't reach another project's rows.
+- **The delivery API** reads as a role that can see published content only, never drafts.
+- **Gated content** (for signed-in site users, or one audience role) is enforced by row-level security, not by a
+  filter the code could forget. A reader without the right role gets the same `404` as for unpublished content, and
+  gated answers never go through the shared cache.
+- **A database on another machine** must be reached with `sslmode=verify-full`, or the server won't start; see
+  [Database TLS](/self-hosting/database-tls/).
+
+### Website connections
+
+Website connections (webhooks, CDN purges and probes) make the server send requests to addresses that project owners
+type in, which could otherwise be used to reach your private network. So:
+
+- an address must be `https` to a public address; private, loopback and link-local addresses, plain `http` and
+  credentials in the URL are refused when the connection is saved;
+- the check is repeated at connection time, with a resolver that drops private answers, so a name can't later be
+  pointed at an internal address;
+- deliveries ignore `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`. A host whose outbound traffic must go through a
+  proxy can't send them yet.
+
+`COLOPHON_ALLOW_PRIVATE_DESTINATIONS=1` lifts all of this, for development against local receivers. It is off by
+default, never turned on by the listen address, and the server says in its log at start when it is on. Never set it
+on a server others can reach.
+
+### Uploads
+
+- Only PNG, JPEG and WebP images up to 20 MiB are accepted. HTML, SVG and archives are not.
+- An upload waits in quarantine until the worker has checked it: the file's real signature decides its type, never
+  the type the client declared, and the decode is bounded (16,384 pixels a side, 25 million pixels, 256 MiB of
+  memory) so a decompression bomb is rejected.
+- The image is re-encoded, which strips metadata such as location, and stored under a name made from its content.
+- An entry can't be published while an image it uses is still in quarantine. Images are served with
+  `x-content-type-options: nosniff`.
+
+### Secrets and logs
+
+- Every secret setting can be read from a file (`_FILE`), so it never sits in the environment; see
+  [Configuration](/self-hosting/configuration/#secrets-from-files).
+- Configuration errors name the variable, never the value; a refused database URL never includes the URL. Logs drop
+  query strings and write sign-in link tokens and device codes as placeholders; see
+  [Monitoring](/self-hosting/monitoring/#what-is-never-logged).
+- Storage over plain `http` is refused unless the storage is on loopback.
+- Development shortcuts refuse to run where others could reach them: `COLOPHON_DEV_MAIL` and the development
+  identity provider's public client secret both need a loopback listen address and a `localhost`
+  `COLOPHON_PUBLIC_URL`.
+
+### The Studio's pages
+
+The Studio is served with headers that stop other sites framing it or sniffing its files:
+
+```http
+x-content-type-options: nosniff
+x-frame-options: DENY
+content-security-policy: frame-ancestors 'none'
+referrer-policy: same-origin
+```
+
+### The container image and the quick start
+
+- The image is distroless: static binaries and the Studio, with no shell and no package manager. Colophon runs as
+  the unprivileged user `65532`.
+- The quick start runs it on a read-only file system with every Linux capability dropped and
+  `no-new-privileges`, and runs the jobs that create the database roles and apply the schema the same way.
+- Only Colophon's port leaves the stack, and only on `127.0.0.1`. PostgreSQL, Valkey and Garage listen on loopback
+  inside it, unreachable from the host or other containers, and PostgreSQL requires a password even there.
+- Every password and key is generated on the first start, into volumes of their own, each file mode `0400` and owned
+  by the one service that reads it. None is in `compose.yaml`, the image or any container's environment.
+
+### The systemd unit
+
+`deploy/production/colophon.service` runs the server with no account on disk and no privileges:
+
+| Setting | What it does |
+|---|---|
+| `DynamicUser=yes` | A throwaway user for the service's lifetime |
+| `LoadCredential=` | Secrets from root-only files, handed over as a private copy |
+| `NoNewPrivileges=yes`, empty `CapabilityBoundingSet=` and `AmbientCapabilities=` | No privileges, now or later |
+| `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `PrivateDevices=yes` | A read-only system, no home folders, private `/tmp`, no devices |
+| `ProtectClock`, `ProtectHostname`, `ProtectKernelLogs`, `ProtectKernelModules`, `ProtectKernelTunables`, `ProtectControlGroups`, `ProtectProc=invisible` | No changing the clock, hostname or kernel, no seeing other processes |
+| `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` | Network sockets only |
+| `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute` | No new namespaces, real-time scheduling, set-id files, personality changes or writable code |
+| `SystemCallArchitectures=native`, `SystemCallFilter=@system-service`, `SystemCallFilter=~@privileged` | Only the system calls an ordinary service needs |
+| `UMask=0077` | Anything it creates is private |
+
+The unit passes `systemd-analyze verify` in CI, but hasn't yet been run on a real host end to end.
+
+## What the operator owns
+
+Colophon can't do these for you:
+
+- **HTTPS.** Colophon serves plain HTTP and expects a TLS proxy in front (the production `Caddyfile` does this with
+  automatic certificates). Add `Strict-Transport-Security` at the proxy if you want it; Colophon doesn't send it.
+- **`COLOPHON_PUBLIC_URL`, exactly.** Sign-in and the `Origin` check on changes trust it exactly: set it to the `https`
+  address people use.
+- **`COLOPHON_TRUSTED_PROXIES`.** Behind a proxy, list its address or network. Without it every visitor looks like
+  the proxy: they share one rate limit, and sign-in pauses and sign-in-link limits per address stop telling clients
+  apart. Never list addresses you don't control, or anyone can choose the address Colophon believes.
+- **`COLOPHON_TRUSTED_ORIGINS`.** Keep it empty unless people reach the Studio at a second address you control.
+- **A firewall.** Only the proxy's ports should be reachable. PostgreSQL, the cache and the storage's admin API
+  must never be public, and the cache in particular has no TLS.
+- **Secrets.** Keep the credential files readable by root only, rotate them if they may have leaked, and restart
+  the server after rotating. Never reuse the development stack's settings or passwords in production, and never set
+  `COLOPHON_ALLOW_PRIVATE_DESTINATIONS` or `COLOPHON_DEV_MAIL` there.
+- **Backups**, their key, and practising a restore: see [Backups and restore](/self-hosting/backups/).
+- **Updates.** Colophon hasn't published a release yet. Keep your clone current, rebuild, and read the
+  [changelog](/changelog/) before upgrading; [Installation](/installation/#upgrading) has the order.
+- **Logs.** Colophon doesn't rotate its own: set rotation in journald or Docker's logging driver.
+- **A leaked token or account.** Revoke the token, or remove the person, at once; then rotate anything related and
+  read the activity log for what it did. Revoking stops new actions; it can't undo a webhook or purge already sent.
+- **Second factors**, through an identity provider, if your people need them.
+
+## Reporting a vulnerability
+
+Report it privately through a GitHub security advisory on the
+[colophon-cms repository](https://github.com/akira-shirase-oss/colophon-cms/security/advisories/new). Don't open a
+public issue for anything that could be exploited: the advisory stays private until a fix ships.
+
+A useful report says which build you ran (the `GET /version` answer), what you could make happen (reading or writing
+across a project boundary, getting round a permission, exhausting a resource, recovering deleted or draft content,
+forging a delivery), the smallest reproduction you have, and whether your configuration mattered.
+
+Colophon is maintained by one person, not a 24-hour service: expect an acknowledgement within a week, then an
+assessment, and a fix, an advisory and a patch release when warranted. Reporters are credited in the advisory unless
+they ask not to be.
+
+Until 1.0, only the newest release on the `0.1` line gets security fixes, with no back-ports. There is no release
+yet, so today that means running a current clone of `main`. The full policy is the repository's
+[security policy](https://github.com/akira-shirase-oss/colophon-cms/security/policy).
+
+## Related
+
+- [Configuration](/self-hosting/configuration/): every setting named here.
+- [Database TLS](/self-hosting/database-tls/): the database connection rule.
+- [Monitoring](/self-hosting/monitoring/): what the logs hold and leave out.
+- [Installation](/installation/): the quick start and the systemd install these protections belong to.

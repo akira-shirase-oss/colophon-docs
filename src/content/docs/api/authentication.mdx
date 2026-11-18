@@ -442,8 +442,8 @@ Every server counts requests, shared across servers through Valkey when there ar
 
 | Counted per | Covers | Default |
 |---|---|---|
-| Client address | The management API and sign-in (`/api/`, `/auth/`) | 300 requests a second, bursts of 600 |
-| Credential | The same routes, per token, cookie or personal token | 150 requests a second, bursts of 300 |
+| Client address | The management API, sign-in, site users and previews (`/api/`, `/auth/`, `/audience/`, `/preview/`) | 300 requests a second, bursts of 600 |
+| Credential | The same routes, per token, cookie, session or preview token | 150 requests a second, bursts of 300 |
 | Client address | The delivery API (`/content/`) | 1,000 requests a second, bursts of 2,000 |
 
 Over a limit, the answer is `429` with `rate_limited` and a `Retry-After` header, before the request does any

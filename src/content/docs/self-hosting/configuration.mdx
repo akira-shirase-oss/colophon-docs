@@ -1,8 +1,395 @@
 ---
 title: Configuration
-description: "Every environment variable, and reading secrets from files."
+description: "Every environment variable colophon-server reads, with its default and limits, how secrets are read from files, and where to set them in Docker Compose and under systemd."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+`colophon-server` takes all of its settings from `COLOPHON_*` environment variables. This page lists every one,
+with its default and what it does, and shows where to set them in the quick start's Docker Compose stack and in a
+production install under systemd. You need it when you change anything beyond the address and port: a domain,
+a database elsewhere, sign-in through an identity provider, email, limits or logs.
+
+## How settings are read
+
+The server reads its environment once, when it starts, checks every setting, and then never reads it again. If
+anything is wrong it refuses to start, lists **every** problem at once so one restart fixes them all, and exits
+with status `1`:
+
+```text
+Error: loading configuration
+
+Caused by:
+    invalid configuration (6 problem(s)):
+      COLOPHON_DATABASE_URL and COLOPHON_DATABASE_URL_FILE are both set: use one
+      COLOPHON_LOG is set but blank
+      COLOPHON_REQUEST_TIMEOUT_MS: cannot parse "10s": invalid digit found in string
+      COLOPHON_S3_SECRET_KEY_FILE: /lab/missing: cannot open it: No such file or directory (os error 2)
+      COLOPHON_S3_ENDPOINT, COLOPHON_S3_BUCKET, COLOPHON_S3_ACCESS_KEY and COLOPHON_S3_SECRET_KEY go together: set all four or none
+      COLOPHON_ALLOW_PRIVATE_DESTINATIONS is 1 or true to turn it on, 0 or false to leave it off
+```
+
+The rules behind those lines:
+
+- **Unset means the default; blank is an error.** A variable that is set but empty (or only spaces) is refused,
+  because it usually means a secret mount failed or a deployment file has a typo.
+- **Numbers are whole numbers, and durations are milliseconds.** Every duration's name ends in `_MS` and takes a
+  plain number: `10000`, never `10s`. Each number has a range; a value outside it is refused, not clamped.
+- **On/off switches are strict.** The two switches, `COLOPHON_ALLOW_PRIVATE_DESTINATIONS` and `COLOPHON_DEV_MAIL`,
+  are on with `1` or `true` and off with `0` or `false` (`true` and `false` in any case). Anything else, such as
+  `yes`, is refused rather than read as off.
+- **Some settings go together.** The storage settings, the identity-provider settings and the mail settings are
+  each all-or-none.
+- **Some pairs must be ordered.** `COLOPHON_PROBE_TIMEOUT_MS` must be shorter than `COLOPHON_PROBE_INTERVAL_MS`,
+  `COLOPHON_WORKER_ATTEMPT_MS` shorter than `COLOPHON_WORKER_LEASE_MS`, and `COLOPHON_DRAIN_DELAY_MS` shorter than
+  `COLOPHON_SHUTDOWN_GRACE_MS`.
+- **Problems never quote a secret.** A refused database URL names the host and the fix, never the URL; a refused
+  secret file names the path and why, never its contents.
+
+### Roles
+
+One binary runs every part of Colophon. `--role` (or `COLOPHON_ROLE`) picks which parts this process runs:
+
+| Role | Runs |
+|---|---|
+| `all` (default) | Everything below, in one process. The quick start and the systemd unit run this. |
+| `api` | The management, delivery, preview and media APIs, the Studio, live events, and the first-run setup code |
+| `worker` | Background work: deliveries to website connections, scheduled publishing, upload checks, bulk work, and the sweeps that expire unused uploads and old records |
+
+Every role listens on `COLOPHON_LISTEN_ADDR` and answers `/livez` and `/readyz`, whose body names the role, so two
+processes on one host need two addresses. Invalid values are refused before anything else:
+
+```text
+Error: invalid value 'web' for '--role <ROLE>'
+  [possible values: api, worker, all]
+```
+
+:::caution[In the container, set the command, not `COLOPHON_ROLE`]
+The image starts `colophon-server --role all`, and a flag beats its environment variable, so `COLOPHON_ROLE` has no
+effect there. To run another role, replace the command: `command: ["--role", "worker"]`.
 :::
+
+## Secrets from files
+
+Five settings hold secrets. Each also has a `_FILE` twin that names a file holding the value, so the secret is
+never in the process environment, a unit file or `docker inspect`:
+
+| Secret | From a file | Required |
+|---|---|---|
+| `COLOPHON_DATABASE_URL` | `COLOPHON_DATABASE_URL_FILE` | Yes, one of the two |
+| `COLOPHON_CACHE_URL` | `COLOPHON_CACHE_URL_FILE` | No |
+| `COLOPHON_S3_SECRET_KEY` | `COLOPHON_S3_SECRET_KEY_FILE` | With the other storage settings |
+| `COLOPHON_OIDC_CLIENT_SECRET` | `COLOPHON_OIDC_CLIENT_SECRET_FILE` | With the other identity-provider settings |
+| `COLOPHON_RESEND_API_KEY` | `COLOPHON_RESEND_API_KEY_FILE` | With the other mail settings |
+
+- **Never both.** Setting a variable and its `_FILE` twin is refused (`… are both set: use one`): one of them is
+  a mistake, and the server won't guess which.
+- **The file** must be UTF-8 text of at most 16 KiB that isn't empty. Spaces and newlines around the value are
+  trimmed, so `echo 'value' > file` works.
+- **It is read once, at start.** After rotating a secret, restart the server.
+
+No other setting has a `_FILE` form. The CLI's administration commands read their own database URL the same way;
+see [The CLI's settings](#the-clis-settings).
+
+## Where to set them
+
+### Quick start: `compose.override.yaml`
+
+The quick start's `compose.yaml` already sets what the stack needs: the database, cache and storage, all read from
+generated secret files. Put your own settings in a `compose.override.yaml` beside it; Compose merges the two, and
+`docker compose up -d --wait` applies the change.
+
+```yaml title="compose.override.yaml"
+services:
+  colophon:
+    environment:
+      COLOPHON_PUBLIC_URL: https://cms.example.com
+      COLOPHON_TRUSTED_PROXIES: 172.16.0.0/12
+      COLOPHON_LOG_FORMAT: json
+      # Sign-in through an identity provider; its secret comes from the file below.
+      COLOPHON_OIDC_ISSUER: https://id.example.com/realms/main
+      COLOPHON_OIDC_CLIENT_ID: colophon
+      COLOPHON_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+    secrets:
+      - oidc_client_secret
+    # Docker gives a container 10 seconds to stop; give Colophon its full shutdown grace.
+    stop_grace_period: 30s
+
+secrets:
+  oidc_client_secret:
+    file: ./oidc_client_secret   # readable by uid 65532, the user Colophon runs as
+```
+
+The `.env` file beside `compose.yaml` holds Compose's own two settings, not the server's: `COLOPHON_PORT` (the host
+port, `8080`, published on `127.0.0.1` only) and `COLOPHON_IMAGE` (the image to run).
+
+### Production: `colophon.env` and systemd credentials
+
+The systemd install in `deploy/production` splits settings in two. Everything that isn't secret goes in
+`/etc/colophon/colophon.env`, which the unit loads with `EnvironmentFile=`:
+
+```sh title="/etc/colophon/colophon.env"
+COLOPHON_LISTEN_ADDR=127.0.0.1:58000
+COLOPHON_PUBLIC_URL=https://cms.example.com
+COLOPHON_TRUSTED_PROXIES=127.0.0.1/32
+COLOPHON_LOG_FORMAT=json
+COLOPHON_LOG=info
+COLOPHON_S3_ENDPOINT=https://s3.example.com
+COLOPHON_S3_REGION=garage
+COLOPHON_S3_BUCKET=colophon
+COLOPHON_S3_ACCESS_KEY=GK0123456789abcdef01234567
+```
+
+Secrets are files in `/etc/colophon/credentials/`, readable by root only. The unit hands each one to the service as
+a systemd credential and points the `_FILE` setting at it (`%d` is the service's private credentials directory):
+
+```text title="deploy/production/colophon.service (excerpt)"
+EnvironmentFile=/etc/colophon/colophon.env
+LoadCredential=database_url:/etc/colophon/credentials/database_url
+LoadCredential=cache_url:/etc/colophon/credentials/cache_url
+LoadCredential=s3_secret_key:/etc/colophon/credentials/s3_secret_key
+Environment=COLOPHON_DATABASE_URL_FILE=%d/database_url
+Environment=COLOPHON_CACHE_URL_FILE=%d/cache_url
+Environment=COLOPHON_S3_SECRET_KEY_FILE=%d/s3_secret_key
+Environment=COLOPHON_STUDIO_DIR=/usr/local/share/colophon/studio
+```
+
+To add a secret the unit doesn't list, such as the identity provider's or the mail provider's, write it to a file
+and add the two lines in a drop-in with `sudo systemctl edit colophon`:
+
+```text
+[Service]
+LoadCredential=oidc_client_secret:/etc/colophon/credentials/oidc_client_secret
+Environment=COLOPHON_OIDC_CLIENT_SECRET_FILE=%d/oidc_client_secret
+LoadCredential=resend_api_key:/etc/colophon/credentials/resend_api_key
+Environment=COLOPHON_RESEND_API_KEY_FILE=%d/resend_api_key
+```
+
+Then put the non-secret halves (`COLOPHON_OIDC_ISSUER`, `COLOPHON_OIDC_CLIENT_ID`, `COLOPHON_MAIL_PROVIDER`,
+`COLOPHON_MAIL_FROM`) in `colophon.env` and `sudo systemctl restart colophon`. Don't also put a secret's plain
+variable in `colophon.env`: with its `_FILE` twin set by the unit, the server refuses to start.
+
+### Defaults that differ by install
+
+The image and the quick start set a few settings for you, so the default you see depends on how you run Colophon:
+
+| Setting | Binary default | Image | Quick start |
+|---|---|---|---|
+| `COLOPHON_LISTEN_ADDR` | `127.0.0.1:58000` | `0.0.0.0:8080` | as the image (published on `127.0.0.1` only) |
+| `COLOPHON_PUBLIC_URL` | `http://localhost:58000` | `http://localhost:8080` | `http://localhost:` + `COLOPHON_PORT` |
+| `COLOPHON_LOG_FORMAT` | `json` | `json` | `pretty` |
+| `COLOPHON_STUDIO_DIR` | none | `/usr/share/colophon/studio` | as the image |
+| `COLOPHON_INSTALL_KIND` | none | `container` | as the image |
+
+## Every setting
+
+Durations are in milliseconds; the number in brackets after a setting's description is the range it accepts.
+
+### Server and addresses
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_ROLE` | `all` | The role, as `--role`. See [Roles](#roles). |
+| `COLOPHON_LISTEN_ADDR` | `127.0.0.1:58000` | The address and port to listen on. Behind a proxy on the same host, keep it on loopback. |
+| `COLOPHON_PUBLIC_URL` | `http://localhost:58000` | The origin people open, such as `https://cms.example.com`: a scheme and host, with an optional port and no path. Sign-in trusts it exactly, the identity provider returns to `{public URL}/auth/callback`, and it is the first origin allowed to make changes with a session cookie. |
+| `COLOPHON_TRUSTED_ORIGINS` | none | More origins allowed to make changes with a session cookie, comma-separated, each compared exactly. Leave empty unless people reach the Studio at a second address. |
+| `COLOPHON_MEDIA_URL` | the public URL | The origin the delivery API writes into image URLs, for a CDN or a separate host in front of `/media/v1`. |
+| `COLOPHON_REQUEST_TIMEOUT_MS` | `10000` | How long one request may take before it is answered `504` with `deadline_exceeded` (100 to 120,000). |
+| `COLOPHON_MAX_BODY_BYTES` | `22020096` (21 MiB) | The largest request body, sized for a 20 MiB image upload (1,024 to 67,108,864). Sign-in and sign-up routes read at most 16 KiB whatever this says. |
+| `COLOPHON_INSTALL_KIND` | none | `container` tells the Studio's first-run screen that the setup code is in `docker compose logs`. The image sets it; nothing else is accepted. |
+
+### Database
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_DATABASE_URL` | required | The server's PostgreSQL URL, as the application login (`colophon_app`), never the owner. A database on another machine needs `sslmode=verify-full`; see [Database TLS](/self-hosting/database-tls/). Or `COLOPHON_DATABASE_URL_FILE`. |
+| `COLOPHON_DB_MAX_CONNECTIONS` | `16` | The API's connection pool (1 to 1,000). |
+
+A process in the `all` role opens up to `COLOPHON_DB_MAX_CONNECTIONS` + `COLOPHON_WORKER_DB_CONNECTIONS` + 2
+connections: the readiness probe and the live-events listener each keep one of their own. With the defaults that is
+22. Keep the sum over every process well under PostgreSQL's `max_connections`.
+
+### Cache
+
+The cache is optional. Without it, every delivery read goes to PostgreSQL and each server counts rate limits on its
+own; with it, published answers are cached and servers share their counts. Colophon keeps nothing there that it
+can't rebuild.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_CACHE_URL` | none | A Valkey or other Redis-protocol server, such as `redis://:password@127.0.0.1:6379`. This build connects without TLS, so keep the cache on the same host or a private network. Or `COLOPHON_CACHE_URL_FILE`. |
+| `COLOPHON_CACHE_TTL_MS` | `300000` (5 minutes) | How long a cached delivery answer lives (1,000 to 3,600,000). |
+| `COLOPHON_CACHE_JITTER_MS` | `60000` (1 minute) | The most random time added to each entry's life, so entries don't all expire at once (0 to 600,000). |
+
+### Storage and media
+
+Uploads go to S3-compatible object storage. Garage is the store Colophon is tested against; other S3 services
+should work but aren't verified yet: try an upload end to end first. Without these settings, uploads are refused
+with `uploads are not configured on this server`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_S3_ENDPOINT` | none | The S3 API's URL. It must be `https`, unless it is a loopback address (`localhost`, `127.0.0.1`, `::1`). |
+| `COLOPHON_S3_BUCKET` | none | The bucket. |
+| `COLOPHON_S3_ACCESS_KEY` | none | The key's id. Not a secret. |
+| `COLOPHON_S3_SECRET_KEY` | none | The key's secret. Or `COLOPHON_S3_SECRET_KEY_FILE`. |
+| `COLOPHON_S3_REGION` | `garage` | The region the store expects. |
+| `COLOPHON_ASSET_EXPIRY_MS` | `86400000` (24 hours) | How long an unused upload (never verified, rejected, or no longer referenced) is kept before it is removed (1 to 31,536,000,000). |
+| `COLOPHON_ASSET_SWEEP_MS` | `300000` (5 minutes) | How often the worker looks for uploads to remove (50 to 3,600,000). |
+
+The endpoint, bucket, access key and secret key go together: set all four or none.
+
+### Sign-in and identity providers
+
+People can always sign in with an email and password that Colophon keeps itself. An OpenID Connect provider (such as
+Keycloak) is optional; register Colophon there with the redirect address `{COLOPHON_PUBLIC_URL}/auth/callback`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_OIDC_ISSUER` | none | The provider's issuer URL, exactly as the provider states it. |
+| `COLOPHON_OIDC_CLIENT_ID` | none | Colophon's client id at the provider. |
+| `COLOPHON_OIDC_CLIENT_SECRET` | none | The client's secret. Or `COLOPHON_OIDC_CLIENT_SECRET_FILE`. |
+| `COLOPHON_PASSWORD_CONCURRENCY` | one per CPU core (at most 64) | How many password hashes may run at once (1 to 256). A burst waits up to two seconds for a slot; past that, sign-in and sign-up answer `503` with `Retry-After`. |
+| `COLOPHON_MAGIC_LINKS_PER_ADDRESS` | `5` | Sign-in links one client address may ask for in one project per ten minutes, for your website's site users (1 to 100,000). |
+| `COLOPHON_MAGIC_LINKS_PER_PROJECT` | `300` | Sign-in links one project may send per minute, all addresses together (1 to 1,000,000). |
+
+The three `COLOPHON_OIDC_*` settings go together. The development realm's client secret, which is public, is refused
+unless the server listens on loopback and `COLOPHON_PUBLIC_URL` is a `localhost` address.
+
+### Mail
+
+Colophon sends one kind of email today: the sign-in link a site user asks for. It sends through Resend. Without a
+provider, links are recorded but not sent.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_MAIL_PROVIDER` | none | `resend`, the only provider this build knows. |
+| `COLOPHON_MAIL_FROM` | none | The `From` header, such as `Colophon <cms@example.com>`. |
+| `COLOPHON_RESEND_API_KEY` | none | The provider's API key. Or `COLOPHON_RESEND_API_KEY_FILE`. |
+| `COLOPHON_RESEND_ENDPOINT` | `https://api.resend.com/emails` | Where mail is posted: your own relay that speaks Resend's API, for example. |
+
+The provider, the `From` address and the key go together; the endpoint only moves the provider's address. Each send
+has a ten-second deadline, and a failed send is logged without the key or the link.
+
+### Rate limits and admission
+
+Rate limits are counted before a request does any work; over a limit the answer is `429` with `Retry-After`. A
+limit is `off`, a number of requests a second (with a burst of twice that), or `rate/burst`, each number from 1 to
+1,000,000. [Rate limits](/api/rate-limits/) explains what a client sees.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_RATE_LIMIT_PER_ADDRESS` | `300/600` | Per client address, on the management API, sign-in, site-user and preview routes. |
+| `COLOPHON_RATE_LIMIT_PER_CREDENTIAL` | `150/300` | Per credential (token, session cookie or personal token) on the same routes. |
+| `COLOPHON_RATE_LIMIT_DELIVERY` | `1000/2000` | Per client address on the delivery API (`/content/`). |
+| `COLOPHON_TRUSTED_PROXIES` | none | Addresses or networks, comma-separated (`127.0.0.1/32`, `10.0.0.0/8`), whose `X-Forwarded-For` names the client. Without it, behind a proxy every visitor looks like the proxy and shares one count. |
+| `COLOPHON_QUOTA_WINDOW_MS` | `60000` | The window an API token's own requests-per-minute limit counts over (10 to 3,600,000). Leave it at a minute. |
+
+Health checks, `/version`, media and the Studio's files are never counted. Per-address bounds on sign-in and
+sign-in links use the same client address, so `COLOPHON_TRUSTED_PROXIES` matters for them too.
+
+### Live events
+
+Bounds on the server-sent event streams that keep the Studio and websites up to date. See
+[Live events](/api/live-events/).
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_EVENTS_PER_CREDENTIAL` | `8` | Signed-in streams one credential may hold open (1 to 1,024). |
+| `COLOPHON_EVENTS_PER_PROJECT` | `256` | Signed-in streams per project (1 to 16,384). |
+| `COLOPHON_EVENTS_MAX_STREAMS` | `2048` | Signed-in streams per server (1 to 65,536). |
+| `COLOPHON_EVENTS_PUBLIC_PER_ADDRESS` | `8` | Public delivery streams one client address may hold open (1 to 1,024). |
+| `COLOPHON_EVENTS_PUBLIC_PER_PROJECT` | `256` | Public delivery streams per project (1 to 16,384). |
+| `COLOPHON_EVENTS_PUBLIC_MAX_STREAMS` | `2048` | Public delivery streams per server (1 to 65,536). |
+| `COLOPHON_EVENTS_CHANNEL_CAPACITY` | `256` | Events buffered per project before a slow stream must resynchronise (8 to 8,192). |
+| `COLOPHON_EVENTS_KEEPALIVE_MS` | `15000` | How often an idle stream gets a keep-alive (1,000 to 120,000). |
+| `COLOPHON_EVENTS_LIFETIME_MS` | `1800000` (30 minutes) | When a stream ends and the client reconnects (1,000 to 86,400,000). |
+| `COLOPHON_EVENTS_REVALIDATE_MS` | `300000` (5 minutes) | How often an open signed-in stream re-checks that its credential may still read the project; `0` turns the check off (0 to 3,600,000). |
+
+### Remote MCP sessions
+
+Bounds on sessions of the remote [MCP](/mcp/) endpoint.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_MCP_PER_TOKEN` | `8` | Sessions one API token may hold (1 to 1,024). |
+| `COLOPHON_MCP_PER_PROJECT` | `256` | Sessions per project (1 to 16,384). |
+| `COLOPHON_MCP_MAX_SESSIONS` | `2048` | Sessions per server (1 to 65,536). |
+| `COLOPHON_MCP_IDLE_MS` | `1800000` (30 minutes) | How long an untouched session lives (60,000 to 86,400,000). |
+
+### Worker
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_WORKER_POLL_MS` | `500` | How often the worker looks for due work, including scheduled publishing (10 to 60,000). |
+| `COLOPHON_WORKER_SLOTS` | `8` | Delivery attempts in flight at once (1 to 64). |
+| `COLOPHON_WORKER_ATTEMPT_MS` | `10000` | One delivery attempt's deadline (100 to 60,000). Must be shorter than the lease. |
+| `COLOPHON_WORKER_LEASE_MS` | `30000` | How long a worker's claim on a job lasts; a job a stopped worker held is claimed again after it (1,000 to 600,000). |
+| `COLOPHON_WORKER_DB_CONNECTIONS` | `4` | The worker's own connection pool, separate from the API's so deliveries can't starve requests (1 to 100). |
+| `COLOPHON_TABLE_SWEEP_MS` | `3600000` (1 hour) | How often the worker deletes records past their retention, such as finished jobs and expired sessions. Content history is never swept (1,000 to 86,400,000). |
+| `COLOPHON_ALLOW_PRIVATE_DESTINATIONS` | off | **Development only.** Lets website connections use plain `http` and private, loopback and link-local addresses. Off, they must be `https` to public addresses. The server says so in its log at start when it is on. |
+
+### Delivery probes
+
+A website connection of the `probe` kind fetches your site to see which release it serves, and may be pinned to a
+location so that only workers in that place run it.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_WORKER_LOCATION` | `local` | Where this worker runs, as probe results name it: 1 to 63 lowercase letters, digits and dashes, starting with a letter or digit, such as `eu-west`. A worker runs probes pinned to its location and probes pinned to none. |
+
+### Health checks and shutdown
+
+See [Monitoring](/self-hosting/monitoring/) for what these produce.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_PROBE_INTERVAL_MS` | `2000` | How often the server checks PostgreSQL and the cache for `/readyz` (100 to 60,000). |
+| `COLOPHON_PROBE_TIMEOUT_MS` | `1000` | How long one check may take before the dependency counts as down (50 to 30,000). Must be shorter than the interval. |
+| `COLOPHON_DRAIN_DELAY_MS` | `5000` | After a stop signal, how long `/readyz` says `draining` before the server stops accepting connections (0 to 60,000). Keep it longer than your load balancer needs to notice. |
+| `COLOPHON_SHUTDOWN_GRACE_MS` | `25000` | The deadline, from the stop signal, for requests in flight to finish; then the server exits anyway (1,000 to 600,000). Must be longer than the drain delay. |
+
+### Logs
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_LOG` | `info` | Which events to log, as `tracing` filter directives: `warn`, or `info,tower_http=debug` for a line per request. An invalid filter stops the server at start. |
+| `COLOPHON_LOG_FORMAT` | `json` | `json`, one object per line for a log pipeline, or `pretty` for reading in a terminal. |
+
+### Studio
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_STUDIO_DIR` | none | A Studio build to serve at `/studio/`. The server checks at start that the folder holds a build. Without it, the server serves the APIs only. |
+
+### Development only
+
+Two settings exist for working on Colophon itself. Never set them on a server others can reach.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `COLOPHON_DEV_MAIL` | off | Hands a site user's sign-in link back in the response instead of emailing it. Refused unless the server listens on loopback and `COLOPHON_PUBLIC_URL` is a `localhost` address. |
+| `COLOPHON_ALLOW_PRIVATE_DESTINATIONS` | off | See [Worker](#worker). |
+
+## The CLI's settings
+
+The `colophon` command reads a few variables of its own. Its administration commands (`colophon admin …`) connect
+to the database as the **migration** login, the table owner, never the server's login:
+
+| Setting | Default | Used by | What it does |
+|---|---|---|---|
+| `COLOPHON_SERVER` | `http://localhost:58000` | `colophon doctor`, `colophon login` | The server's base URL, as `--server`. |
+| `COLOPHON_CONFIG_DIR` | `$XDG_CONFIG_HOME/colophon`, else `~/.config/colophon` | `colophon login`, and the commands that use its profiles | Where `credentials.json`, the signed-in profiles, is kept. |
+| `COLOPHON_MIGRATION_DATABASE_URL` | none | `colophon admin …` | The migration login's URL, as `--database-url`. The same TLS rule applies: see [Database TLS](/self-hosting/database-tls/). |
+| `COLOPHON_MIGRATION_DATABASE_URL_FILE` | none | `colophon admin …` | A file holding that URL, as `--database-url-file`. Setting both is refused. |
+| `COLOPHON_APP_PASSWORD_FILE` | none | `colophon admin init-roles` | A file holding the password for `colophon_app`, the server's login. |
+| `COLOPHON_BACKUP_PASSWORD_FILE` | none | `colophon admin init-roles` | A file holding the password for `colophon_backup`, the login base backups use; without it that login isn't made. |
+| `COLOPHON_ACCOUNT_PASSWORD` | none | `colophon admin account` | The password to set, so it stays out of shell history. |
+
+`colophon mcp` reads `COLOPHON_SERVER`, `COLOPHON_TOKEN` and `COLOPHON_PROJECT`; see [MCP](/mcp/). Every command is
+on the [CLI](/cli/) page.
+
+## Related
+
+- [Installation](/installation/): the quick start and the systemd install these settings belong to.
+- [Database TLS](/self-hosting/database-tls/): what `COLOPHON_DATABASE_URL` must look like for a database elsewhere.
+- [Monitoring](/self-hosting/monitoring/): readiness, `colophon doctor`, logs and shutdown.
+- [Security notes](/self-hosting/security/): which settings an operator must get right.

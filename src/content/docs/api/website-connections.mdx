@@ -1,8 +1,399 @@
 ---
 title: Website connections and receipts
-description: "Webhooks, CDN purges and probes, and the receipt each release keeps."
+description: "Tell your website about each release with a webhook, clear a CDN by tag, check the live site for the release, and read the receipt that says how far each release got."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+import { Steps } from '@astrojs/starlight/components';
+
+Publishing makes a release in Colophon. A website that reads the [delivery API](/api/delivery/) on every
+request sees it at once; a site that is built ahead of time, or sits behind a CDN, needs to be told. **Website
+connections** do the telling, after every release, and each release's **receipt** records what they did and
+what they saw. In the API a website connection is a **destination**.
+
+## The three kinds
+
+| In the Studio | `kind` | After each release, Colophon… | Address |
+|---|---|---|---|
+| **Site rebuild** | `webhook` | posts an announcement of the release, so your site can rebuild | **Webhook URL (https)** |
+| **Cache clear** | `cdn` | posts the cache tags the release changed, so the CDN in front of your site drops those copies | **Purge URL (https)** |
+| **Site check** | `probe` | reads a page of your live site and looks for the release number in it | **URL to check (https)** |
+
+The first two send something; only a site check proves anything about what readers get. A receipt can only
+say a release is **verified** when a site check saw it.
+
+Connections belong to one environment (`production` here). Seeing and changing them needs the
+`destinations.manage` permission: owners and developers have it, and so does a full-access API token. Other
+roles don't see them in the Studio at all, since an address can carry a secret.
+
+## Add a connection
+
+### In the Studio
+
+<Steps>
+
+1. Open the project's **Settings** → **Website connections** and press **Add a connection**.
+2. Choose the **Kind**: **Site rebuild**, **Cache clear** or **Site check**.
+3. Give it a **Connection name** you'll recognise on each receipt, such as `Site build` or `Edge cache`.
+4. Paste the address. For a site check you may also set a **Location**; see [Where a site check
+   runs](#where-a-site-check-runs).
+5. Press **Add website connection**.
+
+</Steps>
+
+Each connection in the list has a checkbox to turn it on or off: **Announce releases**, **Purge on release**
+or **Check each release**.
+
+### With the API
+
+```text
+GET  /api/v1/projects/{project}/environments/{environment}/destinations              the connections
+POST /api/v1/projects/{project}/environments/{environment}/destinations              add one
+PUT  /api/v1/projects/{project}/environments/{environment}/destinations/{destination} turn one on or off
+GET  /api/v1/projects/{project}/environments/{environment}/jobs?generation=          delivery jobs
+GET  /api/v1/projects/{project}/environments/{environment}/releases/{generation}     a release's receipt
+```
+
+The body of a new connection:
+
+| Member | Required | Rules |
+|---|---|---|
+| `kind` | No | `webhook` (the default), `cdn` or `probe` |
+| `name` | Yes | 1 to 100 characters, no control characters |
+| `url` | Yes | `https`, a public address, no user name or password in it, at most 2,000 characters |
+| `location` | No | Site checks only: 1 to 63 lowercase letters, digits and dashes |
+
+```sh
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kind": "webhook", "name": "Site rebuild", "url": "https://build.example.com/hooks/colophon"}'
+```
+
+```http
+HTTP/1.1 201 Created
+content-type: application/json
+x-request-id: 01a1ee89-7894-7169-81e8-c5857e1af4a6
+content-length: 216
+date: Wed, 18 Nov 2026 12:02:29 GMT
+
+{
+  "data": {
+    "id": "01a1ee89-7896-7559-80c7-d436038db473",
+    "kind": "webhook",
+    "name": "Site rebuild",
+    "url": "https://build.example.com/hooks/colophon",
+    "enabled": true,
+    "location": null,
+    "created_at": "2026-11-18T12:02:29.141469Z"
+  }
+}
+```
+
+A new connection is on at once: the next release is announced to it. This route takes no `Idempotency-Key`,
+so sending the same request twice makes two connections.
+
+### Pause one
+
+`PUT` with `{"enabled": false}` pauses a connection, and `{"enabled": true}` turns it back on. The answer is
+`204 No Content`:
+
+```sh
+curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations/01a1ee89-7896-7559-80c7-d436038db473" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'
+```
+
+```http
+HTTP/1.1 204 No Content
+x-request-id: 01a1ee89-78bf-7187-a333-2476b5c8ef39
+date: Wed, 18 Nov 2026 12:02:29 GMT
+```
+
+A paused connection gets nothing from the releases that follow, and it doesn't count towards their receipts.
+Deliveries already queued for earlier releases still run. There is no route to delete a connection; pause one
+you no longer use.
+
+## Addresses: https and public
+
+Colophon calls these addresses from your server, so it refuses any that could reach inside your network. An
+address must be `https`, must not name a private, loopback, link-local or other non-public IP address, and
+must not carry a user name or password:
+
+```sh
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kind": "probe", "name": "Home page", "url": "https://192.168.1.20/"}'
+```
+
+```http
+HTTP/1.1 422 Unprocessable Entity
+content-type: application/json
+x-request-id: 01a1ee89-0d80-703d-9528-10797c328e8e
+content-length: 191
+date: Wed, 18 Nov 2026 12:02:01 GMT
+
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "192.168.1.20 is not a public address",
+    "details": {
+      "reason": "invalid_url",
+      "pointer": "/url"
+    },
+    "request_id": "01a1ee89-0d80-703d-9528-10797c328e8e"
+  }
+}
+```
+
+A plain `http://localhost:4321/rebuild` is refused the same way, with the message
+`destinations must use https`. Every refusal here is `422 validation_failed` with `details.reason` `invalid_kind`, `invalid_name`,
+`invalid_url` or `invalid_location`.
+
+The check is repeated before every attempt, and when a host name is looked up the worker connects only to the
+public addresses it resolves to, so a name that later points inside your network is refused then. The worker
+never follows a redirect and never goes through a proxy set in its environment (`HTTP_PROXY` and the like).
+
+:::caution[Development only]
+`COLOPHON_ALLOW_PRIVATE_DESTINATIONS=1` lets a server use plain `http` and private addresses, so you can point
+connections at a site running on your own machine. It is off by default, and it is never turned on by itself:
+a production server behind a reverse proxy listens on loopback too. Leave it off anywhere real.
 :::
+
+## What each kind sends
+
+Every request comes from the worker with a 10-second deadline and a `User-Agent` of `colophon/` and the
+server's version.
+
+### Site rebuild (webhook)
+
+A `POST` of JSON. For release 2 of the [Management API](/api/management/#publish-through-the-api) example,
+which published the Ginger biscuits, the `Site rebuild` connection above would receive:
+
+```http
+POST /hooks/colophon HTTP/1.1
+Host: build.example.com
+Content-Type: application/json
+Idempotency-Key: colophon:01a1ee74-2617-7296-91a0-d6476f0f925b:01a1ee74-2619-7663-85ef-304a7b48ee66:2:01a1ee89-7896-7559-80c7-d436038db473
+Colophon-Generation: 2
+
+{
+  "changeset": "01a1ee74-3e10-71a4-9437-e69ddbacdc20",
+  "entries": [
+    {
+      "collection": "recipes",
+      "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+      "revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+      "title": "Ginger biscuits"
+    }
+  ],
+  "environment": "production",
+  "epoch": 1,
+  "event": "release.committed",
+  "generation": 2,
+  "project": "01a1ee74-2617-7296-91a0-d6476f0f925b",
+  "published_at": 1795001958
+}
+```
+
+| Member | Meaning |
+|---|---|
+| `event` | Always `release.committed` |
+| `project`, `environment` | The project's id and the environment's name |
+| `epoch`, `generation` | The environment's epoch (a new one starts only when an operator restores a backup) and the release number |
+| `changeset` | The publish request it published (API: changeset) |
+| `published_at` | When, in seconds since 1970 (UTC) |
+| `entries` | Each entry this release published, with the revision readers now get. Entries it took down aren't listed: the receipt's `unpublished` counts them |
+
+`Idempotency-Key` is `colophon:{project}:{environment}:{generation}:{destination}`: the same for every attempt
+at one release, so a receiver that keeps the keys it has seen can drop a repeat. A worker that stops halfway
+through an attempt makes the attempt again with the same key, so treat the announcement as **at least once**.
+
+Answer with any `2xx` once you have accepted it, and do the rebuild afterwards: a reply slower than 10 seconds
+counts as a timeout.
+
+Colophon doesn't sign the request. To be sure an announcement came from your Colophon, put a long random secret
+in the URL (a path segment or a query parameter) and have the receiver check it. Only people who manage
+connections can read the address.
+
+Announcements to one connection go out one at a time and in order: one is never sent after a newer one. If
+several releases are waiting, only the newest is sent and the older ones are marked `superseded`; the newest
+release includes their changes, so rebuild from the delivery API rather than from the `entries` list alone.
+
+Webhooks for other events (entries, media, content types) are **Planned**.
+
+### Cache clear (CDN)
+
+A `POST` with the same headers, whose body names the cache tags to drop. For the same release 2:
+
+```json
+{
+  "tags": [
+    "colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:c:recipes",
+    "colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:n:01a1ee743d837045b45b71f61ccd9352"
+  ]
+}
+```
+
+These are the same tags the delivery API puts in its `cache-tag` header (see [Caching and
+ETags](/api/delivery/#caching-and-etags)): for each entry the releases changed, the entry's tag, which reaches
+every answer that holds it, and its collection's tag, which reaches every list and query of that content type.
+More than 30 tags, and the purge names the environment's tag alone instead. A purge covers every release since
+that connection's last successful one, so a purge skipped for a newer release is never lost. A release that
+changed nothing a CDN could hold sends nothing and counts as done.
+
+Colophon sends this one generic request. Point the connection at an endpoint that accepts it and purges your
+CDN by tag: your CDN's own, if it takes this body, or a small function of yours that calls your CDN's
+purge-by-tag API.
+
+### Site check (probe)
+
+A `GET` of the address, with `Accept: text/html, application/json`. The check reads which release the answer
+was built from, in this order:
+
+1. a `Colophon-Generation` response header, or
+2. the first `<meta name="colophon-generation" content="N">` in the first megabyte of the body, written
+   exactly so: `name` before `content`, double quotes, digits only.
+
+A `2xx` answer that names this release **or a later one** passes. An older release, or no release at all, means
+"not yet": the check looks again, no sooner than every 5 seconds, up to 10 looks in all. Every look is kept as
+an **observation** on the receipt.
+
+A static site prints the marker in its pages' `<head>`, from the release it was built from:
+
+```html
+<meta name="colophon-generation" content="2">
+```
+
+Point the check at a page of **your site**, not at the delivery API: the delivery API always sends
+`Colophon-Generation`, so checking it proves only that Colophon serves the release, not that your site was
+rebuilt or that its CDN let go of the old copy.
+
+## Delivery jobs and retries
+
+Publishing a release creates one **job** per connection that is on, in the same database transaction as the
+release, so a release can't happen without its jobs or the other way round. The worker runs them:
+
+| The attempt | What happens |
+|---|---|
+| `2xx` | Done (`succeeded`). For a site check, only when it saw the release |
+| `408`, `425`, `429`, `500`, `502`, `503`, `504`, a timeout, or no connection | Tried again |
+| Any other status, a redirect included, or an address refused as not public | Given up (`failed`) at once |
+
+Retries wait a random time up to 1 second, then up to 2, 4 and so on, never more than 60 seconds; a
+`Retry-After` in seconds from your server is honoured up to the same 60. A webhook or cache clear gets 5
+attempts, a site check 10. A job not finished an hour after it was created fails.
+
+List the jobs, newest first, optionally for one release:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/jobs?generation=2" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+Each job has `id`, `destination_id`, `destination_name`, `generation`, `status`, `attempts`,
+`last_http_status`, `last_error` (such as `HTTP 503`, `timed out`, `could not connect` or
+`saw release 1, not yet 2`), `created_at` and `finished_at`. The list holds the newest 100 jobs; any member may read it.
+
+| `status` | Meaning |
+|---|---|
+| `pending` | Waiting for its first attempt |
+| `running` | An attempt is in flight |
+| `retrying` | Waiting to be tried again |
+| `succeeded` | Delivered, or the release was seen |
+| `failed` | Refused for good, out of attempts, or out of time |
+| `superseded` | A newer release for the same connection made it unnecessary |
+| `held` | Frozen after a restore from backup until an operator resumes it |
+
+The worker's timing can be tuned: `COLOPHON_WORKER_ATTEMPT_MS` (each attempt's deadline, default 10 s),
+`COLOPHON_WORKER_SLOTS` (attempts in flight, default 8), `COLOPHON_WORKER_POLL_MS` (default 500 ms) and
+`COLOPHON_WORKER_LEASE_MS` (default 30 s, longer than the attempt deadline). See
+[Configuration](/self-hosting/configuration/).
+
+## The receipt
+
+Every release has a receipt: what was published, what each connection did, and what each site check saw.
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases/1" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+```json
+{
+  "data": {
+    "generation": 1,
+    "epoch": 1,
+    "changeset_id": "01a1ee81-1463-72f1-bfd8-7ead078ecf00",
+    "title": "Lemon tart",
+    "changeset_hash": "sha256:b10f7934d85640ce04583516559629c098be811f7c9c8bf6fba1d8bb656511f8",
+    "published_by": "01a1ee81-12ca-7536-9917-c29fb332ce0e",
+    "published_by_name": "Akira Shirase",
+    "published_at": "2026-11-18T11:53:19.3253Z",
+    "entries": 1,
+    "unpublished": 0,
+    "purge": "none",
+    "label": "published",
+    "locations": 0,
+    "deliveries": [],
+    "observations": []
+  }
+}
+```
+
+This release had no connections, so `deliveries` and `observations` are empty and its label is `published`.
+The releases list (`GET …/releases`) carries the same fields except those two lists.
+
+### `label`: one word for how far it got
+
+| `label` | In the Studio | Meaning |
+|---|---|---|
+| `published` | **Published in Colophon** | Live in Colophon. No connection was on, or every connection is done but no site check looked |
+| `pending` | **Website update pending** | A delivery or a check is still on its way; the label settles by itself |
+| `verified` | **Verified at N locations** | Every connection is done, and site checks saw this release (or a later one) from `locations` distinct places |
+| `needs_attention` | **Needs attention** | A connection gave up on this release |
+
+A failure anywhere outranks everything else, then anything still on its way. A release is never just
+"verified": it is verified at the number of places that looked. The Studio shows the label on the
+**Releases** page and on each release's receipt, and for **Needs attention** says which connection failed and
+why. The fix is usually to correct the connection's address or bring the site back, then publish again: the
+next release carries this one's changes, and this receipt's label follows when that one is delivered.
+
+### `deliveries`: each connection's part
+
+| Field | Meaning |
+|---|---|
+| `destination_id`, `name`, `kind`, `location` | The connection |
+| `state` | `done`: its job for this release succeeded. `covered`: a later release's job succeeded, which covers this one (`covered_by` names it). `pending`: still on its way. `failed`: gave up |
+| `covered_by` | The release whose delivery covered this one |
+| `status`, `attempts`, `last_error`, `finished_at` | Its job for this very release, if it had one |
+
+### `observations`: what the site checks saw
+
+One row per look, oldest first: `destination_id`, `location` (the worker that looked), `observed_generation`
+(the release the page named, or `null`), `http_status`, `body_hash` (`sha256:` of what was read), `error` and
+`observed_at`.
+
+### `purge`: the CDN's part
+
+| `purge` | Meaning |
+|---|---|
+| `none` | No cache clear covered this release |
+| `pending` | A purge is on its way: copies the CDN holds may still be served |
+| `accepted` | Every cache clear connection accepted a purge covering it |
+| `failed` | A purge gave up: the CDN may serve old copies until they expire (delivery answers allow shared caches at most 5 minutes) |
+
+`accepted` means the CDN said yes, not that every edge has dropped the copy; a site check is what shows readers
+get the new release. For a release that took entries down, the Studio says **Removal pending at the CDN** until
+the purge is accepted.
+
+## Where a site check runs
+
+Every worker has a location, `COLOPHON_WORKER_LOCATION` (1 to 63 lowercase letters, digits and dashes;
+`local` by default), and every observation records the location of the worker that made it. A site check with
+no `location` is run by any worker; one with a `location` only by workers at that location.
+
+To verify a release from more than one place, run a worker in each place, `colophon-server --role worker`,
+each with its own `COLOPHON_WORKER_LOCATION` (`eu-west`, `us-east`), and add a site check pinned to each. A
+release both see is **Verified at 2 locations**.

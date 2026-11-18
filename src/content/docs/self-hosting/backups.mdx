@@ -1,8 +1,296 @@
 ---
 title: Backups and restore
-description: "Encrypted backups, WAL archiving and the restore steps."
+description: "What to back up, the quick start's dump and copy, encrypted base backups with WAL archiving and the deletion ledger, and the staged restore, with what has and hasn't been rehearsed."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+import { Steps } from '@astrojs/starlight/components';
+
+This page is for whoever looks after a Colophon: what to keep copies of, how to take them, and how to come back from
+them without serving deleted content or firing old webhooks again. Read the section on what has been rehearsed
+first: some of these steps have been rehearsed end to end, and others are written down but not yet tried.
+
+## What to back up
+
+| What | Where it lives | Back it up? |
+|---|---|---|
+| **The database** | PostgreSQL | Yes. It is the only source of truth: content and its history, releases, accounts, tokens (as hashes), jobs. |
+| **Uploads** | The S3 bucket (Garage in the quick start) | Yes, with the store's own tools. Each verified upload is written once, under a name made from its content, and never changed afterwards, so a plain copy or the provider's replication is enough. |
+| **Secrets** | The quick start's four `secrets-*` volumes; `/etc/colophon/credentials/` under systemd | Yes, separately and safely. A restored cluster keeps its logins' old passwords, so the server needs the credentials that match them. |
+| **The backup key** | A passphrase or `age` key file | Yes, away from the backups. Losing it makes every backup unreadable. |
+| **Deletion-ledger exports** | Files next to each backup | Yes, off the database host. A restore needs them; see [The deletion ledger](#the-deletion-ledger). |
+| The cache | Valkey | No. It holds nothing Colophon can't rebuild. |
+
+## What has been rehearsed
+
+| Path | State |
+|---|---|
+| Quick start: database dump and uploads copy, and restoring them | Written down, **not yet drilled** end to end |
+| Encrypted base backups, `verify` and the `daily` schedule | Rehearsed on the repository's development stack, on a laptop |
+| Retention (which backups to keep) | Proven on synthetic backups |
+| The staged restore onto clean infrastructure | Rehearsed on the development stack: deletions made after the backup were replayed, an edit made after it was absent, an in-flight job was held, and the restored server served |
+| WAL archiving | Runs on the development stack, into a local volume; shipping it to object storage is your own `archive_command` |
+| Restoring to a point in time after the base backup, by replaying archived WAL | **Not built.** A restore brings the database back as it was when the base backup was taken; edits since are lost, deletions since are reapplied from the ledger |
+| A production host (systemd, or a managed database) | Not yet followed end to end |
+
+So, today: take base backups as often as you can afford to lose work, export the deletion ledger with each one, and
+practise a restore before you need it. A backup existing is not proof that it restores.
+
+## The quick start
+
+The quick start's backup is a logical dump of the database plus a copy of the uploads volume. Run these in
+`deploy/quickstart`, where `compose.yaml` is.
+
+### Back up
+
+```sh
+# The database, as the owner, with the password read inside the container (never on your shell):
+docker compose exec -T postgres sh -c \
+  'PGPASSWORD="$(cat /run/secrets/postgres/owner_password)" pg_dump -Fc -h 127.0.0.1 -U colophon colophon' \
+  >colophon.dump
+# The uploads, with Garage stopped so the copy is consistent:
+docker compose stop garage
+docker run --rm -v colophon-quickstart_garage:/data:ro -v "$PWD":/backup alpine:3.23 \
+  tar -czf /backup/uploads.tar.gz -C /data .
+docker compose start garage
+```
+
+Uploads can't be made while Garage is stopped, so do this at a quiet time. Never remove the four `secrets-*`
+volumes while you keep the `postgres` volume: they hold the generated passwords that database expects.
+`docker volume ls` lists every volume; their names start with the Compose project's name, `colophon-quickstart`.
+
+### Restore
+
+:::caution[Not yet drilled]
+These restore steps haven't been run end to end yet. Treat them as the plan, try them on a spare machine before you
+rely on them, and report what you find.
 :::
+
+<Steps>
+
+1. Install a fresh quick start and start it once: `docker compose up -d --wait`.
+
+2. Stop Colophon and Garage:
+
+   ```sh
+   docker compose stop colophon garage
+   ```
+
+3. Load the dump, with the same wrapper that keeps the password inside the container:
+
+   ```sh
+   docker compose exec -T postgres sh -c \
+     'PGPASSWORD="$(cat /run/secrets/postgres/owner_password)" pg_restore --clean --if-exists -h 127.0.0.1 -U colophon -d colophon' \
+     <colophon.dump
+   ```
+
+4. Unpack the uploads into the `garage` volume:
+
+   ```sh
+   docker run --rm -v colophon-quickstart_garage:/data -v "$PWD":/backup alpine:3.23 \
+     tar -xzf /backup/uploads.tar.gz -C /data
+   ```
+
+5. Empty the cache, then start everything again:
+
+   ```sh
+   docker compose restart valkey
+   docker compose up -d --wait
+   ```
+
+   Valkey keeps nothing on disk, so a restart empties it. Without that, answers cached from releases made after
+   the backup could be served again under the same release numbers until they expire.
+
+</Steps>
+
+## Production: encrypted base backups
+
+The production path is continuous WAL archiving plus encrypted, verified base backups of the whole PostgreSQL
+cluster, taken with `pg_basebackup` (a logical dump can't be the base for replaying WAL).
+
+:::note[Where the scripts run today]
+`scripts/backup.sh` and `scripts/restore.sh` run from a clone of the repository and reach PostgreSQL through the
+repository's development stack in Docker; that is where they are rehearsed. They don't yet drive the quick start, a
+systemd host or a managed database. On those, follow the same steps with your own tooling: the `colophon admin`
+commands below are the same everywhere. The scripts need `jq`, `openssl`, `docker`, and `gpg` or `age`.
+:::
+
+### 1. Archive WAL continuously
+
+PostgreSQL archives every finished WAL segment through its `archive_command`. Set, in `postgresql.conf`, and restart
+PostgreSQL:
+
+```text
+wal_level = replica
+archive_mode = on
+archive_timeout = 60s
+archive_command = '/usr/local/bin/archive-wal.sh %p %f'
+```
+
+`archive_timeout = 60s` makes even an idle database switch segments within a minute. The command must exit `0` only
+once the segment is stored durably. If it fails, PostgreSQL keeps the segment and retries forever: a growing `pg_wal`
+directory is your alarm. Never make the command "succeed" by dropping a segment, and never delete archived WAL to
+free space.
+
+The repository's `deploy/postgres/archive-wal.sh` is that contract for a local directory (`WAL_ARCHIVE_DIR`, default
+`/wal-archive`): it copies under a temporary name and renames, treats an identical copy as success, refuses to
+overwrite a different file, and flushes to disk before succeeding. For object storage, use a tool such as `wal-g`
+with the same behaviour.
+
+### 2. A login for backups
+
+Base backups run as `colophon_backup`, a login with replication rights and no access to any table, so the backup
+credential is separate from the server's. `colophon admin init-roles` makes it when you give it a password file;
+existing roles are left as they are, so running it again is safe:
+
+```sh
+head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/backup_password >/dev/null
+sudo chmod 0400 /etc/colophon/credentials/backup_password
+sudo colophon admin init-roles --database-url-file /etc/colophon/credentials/migration_database_url \
+  --app-password-file /etc/colophon/credentials/app_password \
+  --backup-password-file /etc/colophon/credentials/backup_password
+```
+
+Allow it a replication connection in PostgreSQL's `pg_hba.conf`.
+
+### 3. Take, verify and keep backups
+
+```sh
+scripts/backup.sh create [root]              # a base backup into <root>/<UTC stamp>/ (default root: backups)
+scripts/backup.sh verify <dir>               # decrypt and check one backup
+scripts/backup.sh daily [root]               # create + verify + ledger export + retention, for a scheduler
+scripts/backup.sh retention [root] [--apply] # show which backups the keep policy keeps; --apply deletes the rest
+```
+
+**`create`** runs `pg_basebackup -X stream` as `colophon_backup`, checks the copy with `pg_verifybackup` against
+PostgreSQL's own manifest, and streams it, compressed, straight into the encryption tool: the unencrypted copy never
+lands on the backup host's disk. Each backup directory holds `base.tar.gz.gpg` (or `.age`) and `manifest.json`,
+which records the PostgreSQL version, the applied migrations, the payload's SHA-256, which key file encrypted it
+(never the key), and the WAL archive's state. A failed run leaves only a dot-file, never something that looks like a
+backup.
+
+**Encryption.** With `age` and `age-keygen` installed the script uses an `age` key; otherwise
+`gpg --symmetric` with AES-256. The secret always comes from a file, never a flag:
+`COLOPHON_BACKUP_PASSPHRASE_FILE` (gpg) or `COLOPHON_BACKUP_AGE_KEY_FILE` (age). Without either, the first `create`
+makes a key file in the clone, mode `600` and ignored by git. In production keep it in your secret store, and keep a
+copy somewhere other than the backups.
+
+**`verify`** is what makes a backup count. It checks the payload against the manifest's SHA-256, decrypts it into a
+scratch folder, checks that the result is a PostgreSQL data directory with its WAL, and, with the development stack
+running, runs `pg_verifybackup` on those same decrypted bytes. It ends `verify ok: N checks passed`, or exits `1`.
+
+**`daily`** is the job to schedule: it creates a backup, verifies it, writes the deletion-ledger export into the
+backup's own directory as `ledger-export.jsonl`, applies retention, and appends one line to `<root>/daily.jsonl`.
+There is no daemon; use cron, a systemd timer or launchd:
+
+```text
+17 3 * * *  cd /path/to/checkout && scripts/backup.sh daily >> backups/daily.log 2>&1
+```
+
+**Retention** keeps, among **verified** backups only, the newest of each of the 7 most recent days that have a
+backup and the newest of each of the 4 most recent ISO weeks, and always the newest verified backup. A stopped
+schedule therefore keeps more old backups, never fewer. Without `--apply` it only prints the plan (`keep`, `prune`).
+A directory that doesn't verify is never pruned: it is listed as `hold` for a person to look at. Retention never
+touches the WAL archive.
+
+### The deletion ledger
+
+Every deletion Colophon makes is recorded in its deletion ledger. A restore replays the ledger so that content
+deleted after the backup, such as a page taken down for legal reasons, stays deleted. Export it off the database host
+with every backup (`daily` does), and more often if you can: a restore can only replay deletions an export holds.
+
+```sh
+colophon admin ledger-export --database-url-file /etc/colophon/credentials/migration_database_url \
+  --out /backups/ledger-export.jsonl
+```
+
+```text
+exported the deletion ledger to file /backups/ledger-export.jsonl (0 rows, through id 0)
+```
+
+`--s3-key deletion-ledger/<high-water>.jsonl` puts the export in the `COLOPHON_S3_*` bucket instead (the CLI reads
+`COLOPHON_S3_SECRET_KEY` from its environment). Each export is complete up to its high-water mark; `--after <mark>`
+writes only the rows past an earlier export, but a restore still needs every file back to before its backup.
+
+### Managed databases
+
+Base backups need a replication connection, which some managed databases, Neon among them, don't offer. There, use
+the provider's own backups and point-in-time restore, and keep exporting the deletion ledger. That path hasn't been
+drilled.
+
+## Restore
+
+A restore happens on **clean infrastructure**: a new, empty PostgreSQL, never the damaged one. It runs in six
+stages, in order. Each stage must finish before the next may start, and nothing serves, and no webhook or purge is
+sent, until the database has a new recovery epoch, the deletion ledger is replayed and you have reconciled the jobs
+that were in flight.
+
+| Stage | What it does | The command it runs |
+|---|---|---|
+| 1. `prepare` | Checks the payload's SHA-256 against `manifest.json`, decrypts it with the key the manifest names, and unpacks it into a fresh data directory | `gpg` or `age`, and `tar` |
+| 2. `verify` | Runs `pg_verifybackup` on the unpacked files before PostgreSQL first starts, then compares the restored schema with the manifest and with this binary | `colophon admin restore verify --manifest manifest.json` (exits `4` if the backup holds migrations this binary doesn't know: upgrade the binary first) |
+| 3. `epoch` | Starts a new recovery epoch in every environment, exactly once, so cached answers and worker claims from before the incident can never be mistaken for new ones | `colophon admin restore epoch` |
+| 4. `ledger` | Replays every deletion made after the backup | `colophon admin ledger-replay --input <file>`, for each export in order |
+| 5. `reconcile` | Freezes every unfinished job as `held` and lists what you must check; resumes them only when you say so | `colophon admin restore hold`, `colophon admin restore jobs`, then `colophon admin restore resume` |
+| 6. `serve` | Starts the server on the restored database and waits for `/readyz` | `colophon-server`, then `colophon doctor` |
+
+Every `colophon admin` command here runs as the migration login, against the **restored** database, with the URL in
+`COLOPHON_MIGRATION_DATABASE_URL` or a file in `COLOPHON_MIGRATION_DATABASE_URL_FILE`, never on the command line.
+
+### With the script
+
+`scripts/restore.sh` runs the six stages against a backup directory. It restores onto a scratch PostgreSQL and
+Valkey that it starts on `127.0.0.1`, so it proves a backup comes back without touching anything live; putting the
+restored database into service is then your step.
+
+```sh
+scripts/restore.sh backups/<stamp> --ledger backups/<stamp>/ledger-export.jsonl   # every stage still pending
+scripts/restore.sh status restores/<stamp>                                        # where each stage stands
+scripts/restore.sh backups/<stamp> --step ledger --ledger <file>                 # one stage again, after fixing what blocked it
+scripts/restore.sh teardown restores/<stamp>                                      # remove the scratch containers and volume
+```
+
+Each stage writes a marker in the workspace (`restores/<stamp>/` by default, or `--into DIR`): `done` with its
+result, or `blocked` with the reason it refused. A stage won't run while an earlier one is missing or blocked, and a
+done stage never runs twice unless you pass `--force`: a second epoch or a second hold is exactly the mistake the
+markers prevent. `--from STAGE` runs that stage and the ones after it. `--ledger` may be given more than once; the
+files must reach back to the backup's own point in the ledger, or the `ledger` stage blocks.
+
+### Reconcile before anything is sent
+
+`held` is a real job state: no worker claims it, no retry or expiry touches it, and only `resume` brings a job back.
+Before resuming, go through `colophon admin restore jobs`:
+
+- **Jobs taken from `was=running`** were mid-attempt when the backup was made: the webhook or purge may already have
+  happened. A resumed job is sent with the same idempotency key, so a receiver that honours it applies it once, but
+  check the website connection is still the one you want.
+- **Due schedules** fire as soon as work resumes, including a publish scheduled while the system was down. Check
+  they are still wanted.
+- **Upload, bulk and content-migration work**: resume what you keep, cancel what the incident made wrong.
+- **What happened outside**: CDN purges and site builds that ran after the backup aren't in the database. Note them
+  yourself.
+
+Then `colophon admin restore resume` returns held jobs to `pending`, and jobs whose deadline passed get a fresh one
+(an hour by default, `--lifetime-secs`). The script's `--resume-jobs` does this at the end of the `reconcile` stage,
+straight after holding, so pass it only when you have already reconciled; otherwise run
+`colophon admin restore resume` against the restored database once you have.
+
+## When something goes wrong
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `pg_wal` keeps growing; the PostgreSQL log shows archive errors | The archive destination is failing; PostgreSQL is keeping the segments, not losing them | Fix the destination (mount, credentials, bucket); the backlog archives itself. Never clear `pg_wal` by hand. |
+| `create` stopped part way | The capture failed; a dot-file may be left in the backup directory | Run it again. The partial file doesn't count as a backup. |
+| `verify` fails the SHA-256 | The stored bytes aren't what was captured | Don't trust that backup; capture again and check the storage. |
+| `pg_verifybackup` fails after decrypting | The files disagree with PostgreSQL's own manifest | The backup is corrupt; restore from an earlier one. |
+| `verify` says `skipped (stack not running)` | The deep check didn't run | Run it again with PostgreSQL available. |
+| `retention` prints `hold` | A backup doesn't verify, so it is kept | Look at it by hand. |
+| The `ledger` stage is blocked: no exports, or a gap | Deletions after the backup can't all be reapplied | Find the missing exports. Nothing serves until the gap is covered. |
+| The `ledger` stage is blocked: replay conflicts | A ledger row can't be applied to this state | Resolve the object it names, then run `--step ledger` again. |
+| `restore verify` exits `4` | The backup is newer than this binary | Upgrade the binary, then restore again. |
+
+## Related
+
+- [Installation](/installation/): the quick start and the systemd install, and upgrading (take a backup first).
+- [Database TLS](/self-hosting/database-tls/): the migration login every `colophon admin` command uses.
+- [Monitoring](/self-hosting/monitoring/): `colophon doctor` and `/readyz` after a restore.
+- [Security notes](/self-hosting/security/): where the secrets and the backup key belong.

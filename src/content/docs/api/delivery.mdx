@@ -14,6 +14,12 @@ POST /content/v1/{project}/{environment}/{collection}/query       filter, sort a
 GET  /content/v1/{project}/{environment}/events                   a live stream: published content changed
 ```
 
+:::note[Call it from your server or build, or from the same origin]
+Colophon sends no CORS headers on `/content/v1`, so a page served from another origin can't read the delivery
+API from the browser: the browser blocks the answer. Fetch it where your site renders (a server route, a
+static build, an edge function), or serve Colophon under your site's own origin with a reverse proxy.
+:::
+
 `{project}` is the project's id (a UUID: **Settings** → **General** → **Technical details**), `{environment}`
 is `production` unless you made others, and `{collection}` is a content type's address name. The examples
 continue from the [Management API](/api/management/) page: release 1 published the Lemon tart, release 2 the
@@ -409,7 +415,9 @@ answers are `private`, never shared-cached, and marked `colophon-cache: bypass`.
 entries are `404`, like unpublished ones.
 
 `GET /content/v1/{project}/{environment}/events` is a public server-sent event stream that sends `change`
-when something is published, with no details, so an open page can read again. See [Live events](/api/live-events/).
+when published content may have changed, with no details, so a site can read again. Like the rest of
+`/content/v1` it has no CORS headers: listen from your site's server, or from a page on the same origin as
+Colophon. See [Live events](/api/live-events/).
 
 ## Limits
 

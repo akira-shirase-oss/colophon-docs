@@ -1,8 +1,93 @@
 ---
 title: Rollback
-description: "Putting an earlier release back on the site as a new release."
+description: "Putting an earlier release back on the site: a rollback opens a publish request that is reviewed and published like any other, as a new release, and never brings back an entry that was taken down."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+import { Steps } from '@astrojs/starlight/components';
+
+A rollback puts back what an earlier release published, for example after a change went live that
+shouldn't have. It is for whoever publishes. Rollback never rewinds history: it makes a publish
+request from the earlier release, and publishing that request makes a **new** release.
+
+## Roll back to a release
+
+<Steps>
+
+1. Open **Releases** in the sidebar and press the release you want back. Its receipt opens.
+
+2. Press **Roll back to this release**. It is on every release except the one that is live now, for any
+   role that may edit content.
+
+   ![The receipt of Release 4, Apple cake and Pear tart, with the Roll back to this release button beside The publish request link](/screens/studio/rollback-receipt.webp)
+
+3. Colophon builds a publish request named *Rollback to release 4* and opens it. It says **restores
+   release 4**, and lists what it would change.
+
+   ![Rollback to release 4: Not sent for review, restores release 4, one entry, Apple cake, an update taking Minutes from 55 back to 50, with the Ask for review button and the review stages waiting](/screens/studio/rollback-request.webp)
+
+4. Check **Entries**. **Changes** shows, for each entry, how the earlier version differs from what
+   readers have now.
+
+5. Press **Ask for review**, have it approved, and publish it, exactly as for any publish request: see
+   [Publishing and review](/studio/publishing/). Review stages apply too.
+
+</Steps>
+
+The request holds:
+
+- the version that was live in that release, for each entry live then whose live version has changed
+  since (marked **update**);
+- an **unpublish** for each entry that is live now but wasn't live then.
+
+Entries that are live now at the same version as then aren't in it. If nothing differs, Colophon
+refuses to build an empty rollback.
+
+## Release numbers only go up
+
+Publishing the rollback makes the next release, not the old number again. After rolling back to release
+4 from release 6, the live release is 7, holding what 4 held, and releases 5 and 6 stay in the list
+with their receipts:
+
+![The Releases page: No. 7 Rollback to release 4, 1 entry changed; No. 6 Unpublish: Pear tart, 0 entries changed, 1 unpublished; No. 5 Apple cake: a longer bake; No. 4 Apple cake and Pear tart, 2 entries changed](/screens/studio/releases.webp)
+
+So the record of what was live, and when, is never rewritten. Sites and caches see an ordinary new
+release, and a reader who pinned an earlier release still reads it as it was.
+
+## An entry that was taken down stays down
+
+**A rollback never brings back an entry that was taken down**, even when you roll back to a release in
+which it was live.
+
+Taking an entry down removes it from every release, past ones included: readers get `410 Gone` for it
+whichever release they ask for. A rollback restores what those releases publish *now*, so a taken-down
+entry isn't in the request at all. That is on purpose: an entry is usually taken down for a reason
+(it was wrong, or it had to go for legal reasons), and an unrelated rollback must not quietly put it
+back.
+
+This is what happened in the example above:
+
+| Release | What it did | Apple cake | Pear tart |
+|---|---|---|---|
+| 4 | Published both | Live, 50 minutes | Live |
+| 5 | Changed Apple cake | Live, 55 minutes | Live |
+| 6 | Took Pear tart down | Live, 55 minutes | Taken down |
+| 7 | *Rollback to release 4* | Live, 50 minutes | **Still taken down** |
+
+The rollback request held only Apple cake. After release 7, Pear tart is still not published:
+
+![Pear tart's side panel after the rollback: Draft, Readers can't see it: it isn't published, with the Publish button](/screens/studio/rollback-pear.webp)
+
+To bring a taken-down entry back, publish it again from its editor, in its own publish request or in
+the same one as the rollback.
+
+## Things to know
+
+- **Rollback works on the whole project.** It restores everything the release published. To bring back
+  one entry's earlier version, use [History and restore](/studio/history/) and publish that.
+- **Images come back as they were.** Each release records the exact version of every image it
+  published, and the rollback publishes those versions again.
+- **Links are checked like any publish.** If the restored versions link to an entry that isn't live,
+  publishing is refused until that entry is published too: see
+  [Linked entries](/studio/linked-entries/).
+- **Websites hear about it.** The new release is announced to your
+  [website connections](/api/website-connections/) like any other, and its receipt says how far it got.

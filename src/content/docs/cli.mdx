@@ -1,8 +1,515 @@
 ---
 title: CLI
-description: "The colophon command: sign in, content, releases, doctor and admin."
+description: "The colophon command: sign in through the browser, list, create, import and export entries, read release receipts, drive schema migrations, check a server, and script it all with JSON output and exit codes."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+import { Steps } from '@astrojs/starlight/components';
+
+`colophon` is Colophon's command line. A person signs it in once through the browser, then uses it to list,
+create, import and export entries, read release receipts, leave comments and tasks, and drive schema
+migrations; an operator uses it to check a server and to run the database's setup, upgrades and restores.
+Every command can print one JSON result and exits with a code that says what kind of failure it met, so
+scripts can rely on it.
+
+It calls the same [management API](/api/management/) as the Studio, as you, with your role's permissions.
+It doesn't publish: approving and publishing stay in the Studio or the API, where a person takes them.
+
+## Get it
+
+There are no release downloads yet. Use the copy in the quick-start container, or build it from a clone.
+
+### In the quick-start container
+
+The image you built in the [quick start](/quick-start/) holds `colophon`. Run it with `docker compose exec`
+from `colophon-cms/deploy/quickstart`. Inside the container, Colophon is at `http://127.0.0.1:8080`, and the
+container's file system is read-only except `/tmp`, so tell the CLI where both are:
+
+```sh
+alias colophon='docker compose exec -T -e COLOPHON_SERVER=http://127.0.0.1:8080 -e COLOPHON_CONFIG_DIR=/tmp/colophon colophon colophon'
+colophon --version
+```
+
+```text
+colophon 0.1.0-alpha.1 (commit …, built 2026-11-18)
+```
+
+The rest of this page uses that alias. Without `COLOPHON_CONFIG_DIR`, `colophon login` is approved but can't
+save its sign-in and stops with exit code 6. What is kept in `/tmp` is gone when the container restarts; sign
+in again then.
+
+### Build it from a clone
+
+The CLI is one binary. Building it needs Rust 1.99 or newer; with [rustup](https://rustup.rs), the
+repository's `rust-toolchain.toml` picks the exact compiler Colophon is built with (1.99.1). A Rust installed
+another way ignores that file and uses whatever version it is. No database is needed to compile:
+
+```sh
+git clone https://github.com/akira-shirase-oss/colophon-cms.git
+cd colophon-cms
+cargo build --release --locked -p colophon-cli
+./target/release/colophon --version
+```
+
+Copy `target/release/colophon` onto your `PATH`. On a Linux host you can instead copy it out of the image, as
+[Installation](/installation/#1-binaries-and-the-studio) does.
+
+:::caution[Pass `--server http://localhost:8080`]
+The CLI's default server is `http://localhost:58000`, not the quick start's `http://localhost:8080`. Pass
+`--server http://localhost:8080` to `login` and `doctor`, or set `COLOPHON_SERVER=http://localhost:8080`.
 :::
+
+## Check a server: `doctor`
+
+`colophon doctor` asks a server whether it is ready, and which dependency isn't. It reads the server's
+`/readyz`, so it reports exactly what a load balancer sees, and it needs no sign-in.
+
+```sh
+colophon doctor
+```
+
+```text
+server    http://127.0.0.1:8080
+role      all
+status    ready
+cache     up
+database  up
+```
+
+It exits `0` when the server is ready and `5` when it is degraded, not ready or unreachable:
+
+```sh
+colophon doctor --server http://localhost:58000 --json
+```
+
+```json
+{"command":"doctor","error":{"code":"unreachable","message":"http://localhost:58000: connection failed"},"version":2}
+```
+
+| Flag | Default | |
+|---|---|---|
+| `--server` | `COLOPHON_SERVER`, else `http://localhost:58000` | The server's base URL |
+| `--timeout-ms` | `5000` | Give up after this many milliseconds |
+| `--json` | | Print one JSON result |
+
+## Sign in: `login`, `whoami`, `logout`
+
+<Steps>
+
+1. **Start the sign-in.** `colophon login` asks the server for a code and prints a link:
+
+   ```sh
+   colophon login
+   ```
+
+   ```text
+   To sign in, open this link in a browser where you're signed in to Colophon:
+     http://localhost:8080/studio/device?code=FMTT-4ZP8
+   and check that it shows the code FMTT-4ZP8.
+   Waiting for approval…
+   ```
+
+2. **Approve it in the Studio.** Open the link in a browser where you are signed in. The page, **Sign in a
+   terminal**, shows the code; check it is the one your terminal printed and press **Allow**. **Don't allow**
+   refuses it, and an unused code expires on its own.
+
+3. **The terminal is signed in.** The CLI receives a personal access token that acts as you for 30 days:
+
+   ```text
+   Signed in to http://127.0.0.1:8080 as Akira Shirase (profile default, until 2026-12-18T12:00:56.252181845Z).
+   ```
+
+</Steps>
+
+`colophon whoami` says who the saved sign-in is and lists your projects, with each one's URL name and your
+role:
+
+```sh
+colophon whoami
+```
+
+```text
+Akira Shirase on http://127.0.0.1:8080, administrator
+  subject akira@example.com at password
+  field-notes  Field notes  (owner)
+```
+
+`colophon logout` revokes the token on the server and forgets it. If the token was already revoked or
+expired, it just forgets it.
+
+```sh
+colophon logout
+```
+
+```text
+Signed out of http://127.0.0.1:8080 (profile default).
+```
+
+| Command | Flags |
+|---|---|
+| `login` | `--server` (`COLOPHON_SERVER`, else `http://localhost:58000`); `--profile` (default `default`); `--name`, what the approval page calls this terminal (default `colophon CLI`); `--json` |
+| `whoami` | `--profile`; `--json` |
+| `logout` | `--profile`; `--json` |
+
+### Where the sign-in is kept
+
+`credentials.json`, readable by its owner only, in the first of:
+
+1. `$COLOPHON_CONFIG_DIR`;
+2. `$XDG_CONFIG_HOME/colophon`;
+3. `~/.config/colophon`.
+
+It holds one **profile** per name, each with its server, token and expiry. `default` is used unless
+`--profile` names another, so one person can be signed in to several servers:
+
+```sh
+colophon login --server https://cms.example.com --profile work
+colophon whoami --profile work
+```
+
+Commands other than `login` and `doctor` take no `--server`: they use the profile's. The CLI always acts as a
+person. It takes its credential only from `colophon login`; it doesn't read `COLOPHON_TOKEN` and doesn't
+work with a project API token (only [`colophon mcp`](/mcp/) does). A script that runs as a token uses the
+[SDK](/sdk/) or the [API](/api/authentication/).
+
+### The version check
+
+Before anything else, `login`, `whoami` and every command that works in a project read the server's
+`/version`, without sending a token, and stop when this `colophon` doesn't fit the server. Before 1.0 both
+must be on the same minor version (any `0.1.x` with any `0.1.x`), the server must serve API `v1`, and it must
+be at least `0.1.0-alpha.1`. A misfit exits `2` and says which side to upgrade. Against a server on 0.2.0:
+
+```text
+error: colophon 0.1.0-alpha.1 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so colophon and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install colophon 0.2.0 to match it (https://github.com/akira-shirase-oss/colophon-cms/releases).
+```
+
+`logout` skips the check, so you can always sign out. `doctor` doesn't check versions.
+
+## Work in a project
+
+Every command below takes:
+
+| Flag | Default | |
+|---|---|---|
+| `--project` | (required) | The project's id or URL name, such as `field-notes` |
+| `--env` | `production` | The environment |
+| `--profile` | `default` | Which sign-in to use |
+| `--json` | | Print one JSON result |
+| `--jsonl` | | List commands: print one JSON object per item, following every page |
+
+A project you aren't a member of is refused before the command does anything, and exits `3`:
+
+```sh
+colophon content list --project nope recipes
+```
+
+```text
+error: no project "nope" that you're a member of
+```
+
+### `content`
+
+| Command | What it does | Flags |
+|---|---|---|
+| `content list <collection>` | Entries, newest first | `--limit` (default 20), `--cursor` |
+| `content create <collection>` | A new draft | `--data` (JSON) or `--file`; `--idempotency-key` |
+| `content query <collection>` | Run a [query document](/api/delivery/#filter-and-sort) over drafts, a page at a time | `--data` or `--file`; `--cursor`; `--limit` (1 to 100) |
+| `content import <collection>` | Import entries in one transaction, or none | `--data` or `--file` (JSONL, a JSON array, or a Strapi or Sanity export); `--dry-run`; `--type` (the Sanity `_type` to take); `--idempotency-key` |
+| `content export <collection>` | Every draft as JSONL, the file `content import` takes back | |
+
+```sh
+colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": 35}'
+```
+
+```text
+Created recipes 01a1ee88-5797-75c8-a330-100cf0e41491 (Eccles cakes)
+```
+
+Content that doesn't fit the content type is refused with the field's pointer, and exits `2`:
+
+```sh
+colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": "thirty"}'
+```
+
+```text
+error: Minutes is a number (at /minutes) [HTTP 422]
+```
+
+```sh
+colophon content list --project field-notes recipes
+```
+
+```text
+01a1ee88-5797-75c8-a330-100cf0e41491  2026-11-18T12:01:15.158931Z  Eccles cakes
+01a1ee86-e419-766d-bf99-9094106e5799  2026-11-18T11:59:40.056335Z  Bakewell tart
+01a1ee85-d1b6-7564-994a-65b55a75b012  2026-11-18T11:58:37.104331Z  Treacle tart
+01a1ee84-8d34-71ed-83b2-c33fd5ee4e1d  2026-11-18T11:57:06.738466Z  Flapjacks
+01a1ee84-8d1c-760a-82a7-f39ca86a9e1b  2026-11-18T11:57:06.714491Z  Ginger biscuits
+01a1ee81-13ee-70ff-9989-321e046286f8  2026-11-18T11:53:19.160733Z  Lemon tart
+```
+
+A query takes the same document as the delivery API's, over drafts; the field must be filterable:
+
+```sh
+colophon content query --project field-notes recipes \
+  --data '{"filters": [{"field": "minutes", "op": "lte", "value": 40}], "sort": [{"field": "minutes", "dir": "asc"}], "fields": ["dish", "minutes"]}'
+```
+
+```text
+01a1ee84-8d1c-760a-82a7-f39ca86a9e1b  2026-11-18T11:57:06.714491Z  Ginger biscuits
+01a1ee84-8d34-71ed-83b2-c33fd5ee4e1d  2026-11-18T11:57:06.738466Z  Flapjacks
+01a1ee88-5797-75c8-a330-100cf0e41491  2026-11-18T12:01:15.158931Z  Eccles cakes
+```
+
+`--dry-run` plans an import item by item and writes nothing:
+
+```sh
+colophon content import --project field-notes recipes --dry-run \
+  --data '[{"dish": "Parkin", "minutes": 90}, {"dish": "Rock cakes", "minutes": "twenty"}]'
+```
+
+```text
+Plan for recipes: 1 would create, 1 invalid.
+  /1 invalid: Minutes is a number (wrong_type at /1/minutes)
+```
+
+`content export` writes the file to standard output, one content document a line, and its summary to
+standard error:
+
+```sh
+colophon content export --project field-notes recipes > recipes.jsonl
+```
+
+```text
+Exported 7 entries from recipes.
+```
+
+### `release`
+
+Releases and their receipts, read only.
+
+| Command | What it does |
+|---|---|
+| `release list` | The environment's releases, newest first (`--jsonl` for one object per release) |
+| `release show <generation>` | One release's receipt: its publish request, counts, deliveries and what site checks saw |
+
+```sh
+colophon release list --project field-notes
+```
+
+```text
+generation 1  2026-11-18T11:53:19.3253Z  published  Lemon tart
+```
+
+```sh
+colophon release show --project field-notes 1
+```
+
+```text
+Release 1 — published
+  published 2026-11-18T11:53:19.3253Z by Akira Shirase
+  changeset 01a1ee81-1463-72f1-bfd8-7ead078ecf00 (Lemon tart)
+  1 published, 0 taken down; purge none; seen at 0 location(s)
+```
+
+See [Releases and receipts](/concepts/#releases-and-receipts) for what a receipt records.
+
+### `comment` and `task`
+
+| Command | What it does | Flags |
+|---|---|---|
+| `comment list <collection> <entry>` | An entry's comments, newest first | `--revision`; `--state` (`open`, `resolved`); `--limit` (default 20); `--cursor` |
+| `comment create <collection> <entry>` | A comment on one revision | `--revision` and `--body` (required); `--field`, where in the content it points, like `minutes` or `sections/2/byline`; `--idempotency-key` |
+| `task list` | The environment's tasks, newest first | `--entry`; `--collection`; `--assignee` (`me`, `none` or an id); `--status` (`open`, `done`, `cancelled`); `--limit` (default 20); `--cursor` |
+| `task show <task>` | One task, with the `ETag` that `task update` needs | |
+| `task create` | A task on an entry | `--entry` and `--title` (required, at most 200 characters); `--revision`; `--changeset`; `--assignee`; `--idempotency-key` |
+| `task update <task>` | Change its title, assignee or status | `--if-match` (required); `--title`; `--assignee` or `--unassign`; `--status`; `--idempotency-key` |
+
+```sh
+colophon comment create --project field-notes recipes 01a1ee88-5797-75c8-a330-100cf0e41491 \
+  --revision 01a1ee88-5797-75c8-a330-100bdd196501 --field minutes --body "Is 35 minutes right for a fan oven?"
+colophon task create --project field-notes --entry 01a1ee88-5797-75c8-a330-100cf0e41491 --title "Check the baking time"
+colophon task list --project field-notes
+```
+
+```text
+Created comment 01a1ee88-e98d-7438-87da-517f8987e772 on recipes/01a1ee88-5797-75c8-a330-100cf0e41491
+Created task 01a1ee88-ea69-7448-af93-81d03c2a1b4f (Check the baking time)
+01a1ee88-ea69-7448-af93-81d03c2a1b4f  open  Check the baking time  sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d
+```
+
+The last column is the task's `ETag`. `task update` sends it as `--if-match`, so it changes exactly the task
+you looked at. A second update with the same, now stale, `ETag` is a conflict and exits `4`:
+
+```sh
+colophon task update --project field-notes 01a1ee88-ea69-7448-af93-81d03c2a1b4f \
+  --if-match sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d --status done
+colophon task update --project field-notes 01a1ee88-ea69-7448-af93-81d03c2a1b4f \
+  --if-match sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d --status open
+```
+
+```text
+Updated: task 01a1ee88-ea69-7448-af93-81d03c2a1b4f is now done
+error: the task has changed since you loaded it; load it again and check what changed [HTTP 409]
+```
+
+See [Comments and tasks](/studio/comments-and-tasks/) for the same in the Studio.
+
+### `migration`
+
+A change to a content type that the entries already stored don't fit can't be applied directly. A schema
+migration plans it as a dry run, a person approves the exact plan, and then it runs entry by entry. Each
+command needs `schema.change` on the project.
+
+| Command | What it does | Flags |
+|---|---|---|
+| `migration plan <collection>` | Compute and store a plan for a new definition | `--data` or `--file`, the target content type definition; `--operations`, a file with a JSON array of `fill` and `move` operations; `--idempotency-key` |
+| `migration list` | The plans, newest first | `--collection`; `--state` (`proposed`, `approved`, `running`, `done`, `blocked`, `superseded`, `cancelled`) |
+| `migration show <migration>` | One plan: its target, hash, items and where it stands | |
+| `migration items <migration>` | Its items in entry order | `--outcome` (`ok`, `migrates`, `needs_input`, `blocked`, `resolved`, `applied`, `skipped`); `--limit` (default 50); `--cursor` |
+| `migration approve <migration>` | Approve a proposed plan | `--if-match`, the plan's hash (required) |
+| `migration resolve <migration> <entry>` | Give an item that needs input a document the new definition accepts | `--if-match` (required); `--data` or `--file` |
+| `migration apply <migration>` | Start an approved plan | `--if-match` (required) |
+| `migration cancel <migration>` | Cancel a plan that hasn't run | |
+
+`approve`, `resolve` and `apply` are bound to the plan's hash, as `migration show` prints it: if the plan
+changed after you looked, they are refused.
+
+### `preview`
+
+`colophon preview --project <project> <entry>` prints a one-time address that opens the entry's saved draft
+on your own site; `--changeset <id>` previews a publish request instead, and `--minutes` (default 15) sets
+how long the preview lasts. The address works once, within a minute. The project needs a preview address
+first; without one:
+
+```text
+error: this project has no preview address yet; set one in Settings → Website connections [HTTP 422]
+```
+
+See [Preview](/studio/preview/).
+
+## Script it
+
+### JSON output
+
+`--json` prints exactly one JSON object on standard output: `version` (the output format's version, `2`),
+`command` and `data`, or `error` in place of `data` when the command failed.
+
+```sh
+colophon content list --project field-notes recipes --limit 1 --json
+```
+
+<details>
+<summary>Output, formatted here</summary>
+
+```json
+{
+  "command": "content list",
+  "data": {
+    "collection": "recipes",
+    "entries": [
+      {
+        "created_by": "01a1ee81-12ca-7536-9917-c29fb332ce0e",
+        "id": "01a1ee88-5797-75c8-a330-100cf0e41491",
+        "locale": null,
+        "published": null,
+        "revision": {
+          "author_id": "01a1ee81-12ca-7536-9917-c29fb332ce0e",
+          "base_revision_id": null,
+          "content_hash": "sha256:8fb6d1caf954462e26c9df74389bc3e5db54577d64edbc9ebdfc2df1433c35ea",
+          "created_at": "2026-11-18T12:01:15.158931Z",
+          "id": "01a1ee88-5797-75c8-a330-100bdd196501",
+          "title": "Eccles cakes",
+          "visibility": "public"
+        },
+        "updated_at": "2026-11-18T12:01:15.158931Z",
+        "visibility": "public"
+      }
+    ],
+    "next_cursor": "djE6MDFhMWVlODEtMTM2ZS03NTIwLTg4MzQtZjIzNGFlMGMwYmFmOnByb2R1Y3Rpb246cmVjaXBlczowMWExZWU4OC01Nzk3LTc1YzgtYTMzMC0xMDBjZjBlNDE0OTE"
+  },
+  "version": 2
+}
+```
+
+</details>
+
+A refusal from the API arrives whole, as the [error envelope](/api/errors/) has it: `code`, `message`,
+`details` and `request_id`.
+
+```sh
+colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": "thirty"}' --json
+```
+
+```json
+{"command":"content create","error":{"code":"validation_failed","details":{"pointer":"/minutes","reason":"wrong_type"},"message":"Minutes is a number","request_id":"01a1ee88-584e-7650-828d-f2a8e1617719"},"version":2}
+```
+
+A failure the CLI raised itself has `code` set to its exit class (`usage`, `denied`, `conflict`,
+`unavailable`, `internal`); `doctor` uses `invalid_server`, `unreachable` and `unexpected_reply`.
+
+```sh
+colophon whoami --profile staging --json
+```
+
+```json
+{"command":"whoami","error":{"code":"denied","message":"not signed in (profile \"staging\"); run `colophon login`"},"version":2}
+```
+
+`--jsonl`, on the list commands, prints one object per item, each in the same envelope, as its page arrives,
+and follows `next_cursor` to the end of the list (`--cursor` starts it part-way). A page that fails ends the
+stream with an `error` line, so a cut-off list never looks complete. `--json` and `--jsonl` can't be used
+together.
+
+Diagnostics, progress and the `error: …` line always go to standard error, never to standard output, and the
+CLI prints no colour codes.
+
+### Exit codes
+
+| Code | Meaning | For example |
+|---|---|---|
+| `0` | Success | |
+| `2` | Usage or validation error: retrying won't help | A missing flag, content that doesn't fit (`422`), a `colophon` too old or too new for the server |
+| `3` | Unauthorized or denied | Not signed in, a revoked sign-in (`401`), no permission (`403`), not found (`404`), a project you aren't in |
+| `4` | Conflict | A stale `--if-match` or revision (`409`); `admin migrate-status` when the database is newer than the binary |
+| `5` | Unavailable: safe to retry | No answer, `429`, a `5xx`, `doctor` on a server that isn't ready |
+| `6` | Internal failure | An answer that isn't what Colophon sends, a credentials file that can't be written |
+
+### Retries
+
+The commands that write (`content create` and `import`, `comment create`, `task create` and `update`, and the
+`migration` commands that change a plan) send an `Idempotency-Key`, one per run. If a request gets no answer,
+the CLI tries again three times, after 1, 2 and 4 seconds, with the **same** key, so the write can't happen
+twice. If every
+attempt fails, the error names the key: run the same command again with `--idempotency-key <key>` and it is
+just as safe. See [Idempotency-Key](/api/management/#create-the-idempotency-key-header).
+
+## `colophon mcp`
+
+`colophon mcp` serves Colophon's MCP server on standard input and output, for an AI agent's host to start. It
+is configured from the environment (`COLOPHON_SERVER`, `COLOPHON_TOKEN`, `COLOPHON_PROJECT`), logs to
+standard error, and is the one command that uses a project API token. See [MCP server for agents](/mcp/).
+
+## `admin`: operator commands
+
+`colophon admin` is for whoever runs the server. It talks to PostgreSQL directly, as the migrator (the login
+that owns the tables), never through the API. Every `admin` command takes the migrator's connection URL as
+`--database-url` (or `COLOPHON_MIGRATION_DATABASE_URL`), or from a file with `--database-url-file` (or
+`COLOPHON_MIGRATION_DATABASE_URL_FILE`), and `--json`. Normal commands never need a database password.
+
+| Command | What it does |
+|---|---|
+| `admin init-roles --app-password-file <file>` | Create the database logins the server uses, with passwords from files; `--backup-password-file` also creates the backup login. Safe to run again: existing logins are left as they are. Run it before `admin migrate` |
+| `admin migrate` | Apply pending database migrations |
+| `admin migrate-status` | Report applied and pending migrations without applying anything. Exits `4` when the database holds a migration this binary doesn't know: the schema is newer than the code |
+| `admin bootstrap --issuer <issuer> --subject <subject>` | Make the first administrator, once; for a built-in account, `--issuer password --subject <email>`. It can't run again |
+| `admin account --email <email>` | Create or update a built-in (email and password) account; `--admin` makes it an administrator; `--display-name`. Give the password in `COLOPHON_ACCOUNT_PASSWORD` rather than `--password`, so it stays out of your shell history |
+| `admin ledger-export` | Copy the deletion ledger off the host, to a file (`--out`, `-` for standard output) or the object store (`--s3-key`); `--after` for only what is newer than an earlier export. Run it with your backups |
+| `admin ledger-replay --input <file>` | Reapply an exported deletion ledger on a freshly restored database, before anything serves |
+| `admin restore verify --manifest <file>` | Check a restored database against the backup's manifest; exits `4` when the backup holds migrations this binary doesn't know |
+| `admin restore epoch` | Start a new timeline after a restore, so nothing cached from before can act on it |
+| `admin restore hold` | Hold every unfinished website delivery, so nothing from before the restore fires again |
+| `admin restore jobs` | List what is held or in flight, to check by hand |
+| `admin restore resume` | Release the held deliveries; `--lifetime-secs` (default 3600) for jobs past their deadline |
+
+[Installation](/installation/) uses `init-roles`, `migrate` and `migrate-status` to set up and upgrade a
+server; [Backups and restore](/self-hosting/backups/) uses the ledger and `restore` commands.

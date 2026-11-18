@@ -1,8 +1,184 @@
 ---
 title: Rate limits
-description: "How requests are counted, and what a 429 means."
+description: "What Colophon counts, per client address and per credential, the defaults and the settings that change them, the other caps that answer 429 or 503, and how a client should back off."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+import { Steps } from '@astrojs/starlight/components';
+
+Colophon limits how fast requests may arrive, so one busy script or one hostile client can't take the server
+from everyone else. An over-limit request is refused with `429` before any work is done for it, and the answer
+says how long to wait. This page is for people writing clients and for operators setting the limits.
+
+## What is counted
+
+| Count | Requests it covers | Default | Setting |
+|---|---|---|---|
+| Per client address | The management API and everything signed in: paths starting `/api/`, `/auth/`, `/audience/` and `/preview/` | 300 a second, bursts of 600 | `COLOPHON_RATE_LIMIT_PER_ADDRESS` |
+| Per credential | The same paths, per API token, personal access token, session cookie or preview token | 150 a second, bursts of 300 | `COLOPHON_RATE_LIMIT_PER_CREDENTIAL` |
+| Delivery, per client address | The delivery API, `/content/` | 1,000 a second, bursts of 2,000 | `COLOPHON_RATE_LIMIT_DELIVERY` |
+
+A management request counts against both its address and its credential, and is admitted only if both have
+room. **Never counted:** media (`/media/v1`), the Studio's own files, the health checks (`/livez`, `/readyz`),
+`/version` and `/openapi.json`.
+
+- **Client address.** The address the connection comes from, or, behind a trusted proxy, the address the
+  proxy says it is forwarding for ([below](#behind-a-reverse-proxy)). An IPv6 address is counted by its
+  `/64`, the block one subscriber is usually given, so moving around inside it doesn't start a new count.
+- **Credential.** The bearer token in `Authorization`, or else the `colophon_session` cookie. It is counted
+  by a hash, so the secret itself is never stored, and a made-up or revoked token is counted too: guessing
+  costs the guesser.
+
+## How the limits work
+
+Each limit is a **rate** and a **burst**: a client may send up to the burst at once, after which requests are
+admitted at the rate, one every 1/rate seconds. A client that stays under the rate is never refused; one that
+pauses earns its burst back. (This is the generic cell rate algorithm, GCRA.)
+
+With Valkey configured, every server checks every limit in one Valkey script on Valkey's own clock, so a
+cluster shares one count: ten servers still allow a client 300 requests a second, not 3,000. If Valkey is
+down, or doesn't answer within 100 milliseconds, each server counts on its own until Valkey is back. The
+limits stay in force, only per server (a cluster of N may then admit up to N times the rate), and Valkey being
+down never refuses a request by itself.
+
+## The answer over a limit
+
+A burst of 330 requests at once with one made-up token: about 300 were admitted (and then refused as
+`401 unauthorized`, since the token doesn't exist), and the last 23 were refused by the per-credential
+limit:
+
+```http
+HTTP/1.1 429 Too Many Requests
+content-type: application/json
+retry-after: 1
+x-request-id: 01a1ee98-eca8-73da-a21f-addc9c0e1931
+content-length: 190
+date: Wed, 18 Nov 2026 12:19:21 GMT
+
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "too many requests; try again in 1 second(s)",
+    "details": {
+      "reason": "rate_limited",
+      "pointer": ""
+    },
+    "request_id": "01a1ee98-eca8-73da-a21f-addc9c0e1931"
+  }
+}
+```
+
+`Retry-After` is whole seconds, rounded up and at least 1: the time until a request would be admitted. The
+same answer comes from every limit on this page that answers `429 rate_limited`.
+
+## Settings
+
+Set these in the server's environment (see [Configuration](/self-hosting/configuration/)):
+
+| Setting | Default | Value |
+|---|---|---|
+| `COLOPHON_RATE_LIMIT_PER_ADDRESS` | `300/600` | `<rate>/<burst>` |
+| `COLOPHON_RATE_LIMIT_PER_CREDENTIAL` | `150/300` | `<rate>/<burst>` |
+| `COLOPHON_RATE_LIMIT_DELIVERY` | `1000/2000` | `<rate>/<burst>` |
+| `COLOPHON_TRUSTED_PROXIES` | none | Comma-separated addresses or networks, such as `127.0.0.1/32` or `10.0.0.0/8,fd00::/8` |
+
+A rate is one of:
+
+- `<rate>/<burst>`: requests a second, and how many may come at once. `500/1500`.
+- `<rate>`: the burst is twice the rate. `500` means `500/1000`.
+- `off`: no limit of this kind.
+
+Each number is from 1 to 1,000,000. A value that is none of these stops the server from starting, with a
+message naming the setting.
+
+```sh
+COLOPHON_RATE_LIMIT_DELIVERY=2000/4000
+COLOPHON_RATE_LIMIT_PER_CREDENTIAL=off
+```
+
+Turning a limit `off` removes that protection entirely; prefer raising it.
+
+### Behind a reverse proxy
+
+Behind a reverse proxy or load balancer, every connection comes from the proxy, so without more information
+every visitor would share the proxy's one count. List the proxy in `COLOPHON_TRUSTED_PROXIES` and Colophon
+reads the client from `X-Forwarded-For`: it walks the header from the right, past every trusted address, and
+counts the first address that isn't trusted. An entry that isn't an address ends the walk. A connection from an
+address that isn't trusted is counted by that address, whatever its `X-Forwarded-For` says, so a client can't
+choose its own count.
+
+The production profile's `deploy/production/colophon.env` sets `COLOPHON_TRUSTED_PROXIES=127.0.0.1/32` for the
+Caddy server in front of it. List only your own proxies, or a CDN's published ranges if it connects directly:
+a trusted address can claim to forward for anyone.
+
+The same client address is used by the public [live events](/api/live-events/) stream's per-address cap and by
+the limits on sign-in links and sign-in guesses below.
+
+## A token's own ceiling
+
+Beside the operator's limits, a project can give an API token its own `requests_per_minute` (1 to 100,000),
+set as one of the token's [limits](/api/authentication/#limits). It is a rolling minute: the whole minute's
+allowance may arrive at once, then one request every 60/N seconds. It is checked when the request reaches the
+token's project, and over it the answer is the same `429 rate_limited` with `Retry-After`. The first refusal of
+each run of refusals is recorded in the project's activity log. The token's other limits, `documents_per_day`
+and `max_concurrent_jobs`, are quotas rather than rates: over them a request is `403` with `budget_exceeded`.
+
+## Other caps that answer 429 or 503
+
+Some work is bounded by how much of it may be open at once rather than by a rate. All of these are per server.
+
+| What | Bound (default) | Over it | Setting |
+|---|---|---|---|
+| Signed-in [live event](/api/live-events/#signed-in-stream-limits) streams | 8 per credential; 256 per project; 2,048 in all | `429 rate_limited`, `Retry-After: 30`; `503 unavailable` | `COLOPHON_EVENTS_PER_CREDENTIAL`, `COLOPHON_EVENTS_PER_PROJECT`, `COLOPHON_EVENTS_MAX_STREAMS` |
+| Public live event streams | 8 per client address; 256 per project; 2,048 in all | `429`, `Retry-After: 30`; `503` | `COLOPHON_EVENTS_PUBLIC_PER_ADDRESS`, `COLOPHON_EVENTS_PUBLIC_PER_PROJECT`, `COLOPHON_EVENTS_PUBLIC_MAX_STREAMS` |
+| Remote [MCP](/mcp/) sessions | 8 per token; 256 per project; 2,048 in all | `429`, `Retry-After: 30`; `503` | `COLOPHON_MCP_PER_TOKEN`, `COLOPHON_MCP_PER_PROJECT`, `COLOPHON_MCP_MAX_SESSIONS` |
+| [Preview](/studio/preview/) reads in flight | 32 | `503 unavailable`, `Retry-After: 1` | |
+| Sign-in links for site users | 5 per client address per project in 10 minutes; 300 per project a minute | `429 rate_limited`, `Retry-After` | `COLOPHON_MAGIC_LINKS_PER_ADDRESS`, `COLOPHON_MAGIC_LINKS_PER_PROJECT` |
+| Password hashing (sign-in, sign-up) | One job per CPU core at once; a burst waits up to 2 seconds | `503 unavailable`, `Retry-After: 1` | `COLOPHON_PASSWORD_CONCURRENCY` (1 to 256) |
+| Database connections | The pool (`COLOPHON_DB_MAX_CONNECTIONS`, 16) | `503 unavailable`, `Retry-After: 1`: "the server is busy" | |
+| A project's unfinished background work | 10,000 open jobs | `503 unavailable` with `work_full`, `Retry-After: 5` | |
+
+Two things that look like limits answer differently on purpose:
+
+- **Sign-in guessing.** The eighth wrong password for one account from one client address pauses that pair
+  for 15 minutes, and fifty misses within an hour for one account, from addresses it has never signed in
+  from, pause all such addresses for that account. A paused attempt is answered exactly like a wrong password, `400 sign_in_failed`, never `429`, so
+  a guesser can't tell a pause from a miss.
+- **The 429 for sign-in links** carries no `details` and counts its message in minutes; branch on the status
+  and `code`, and wait for `Retry-After`.
+
+## What a client should do
+
+<Steps>
+
+1. **On `429` or `503` with `Retry-After`, wait that many seconds**, then send the same request again.
+   Retrying sooner is refused again and keeps the count full.
+2. **Without `Retry-After`**, back off: wait about a second, then two, then four, with some randomness so
+   many clients don't return together, and give up after a few tries.
+3. **Keep the `Idempotency-Key`** of a write you retry, so a write that did happen isn't made twice
+   ([Retrying](/api/errors/#retrying)).
+4. **Spread steady work out** rather than sending it in bursts: an import that sends at a steady rate under
+   the limit is never refused.
+
+</Steps>
+
+The [SDK](/sdk/) turns `Retry-After` into `retryAfterMs` (at most a minute) on its `ApiError`, beside
+`retryable`; it doesn't retry by itself, so the waiting stays in your code:
+
+```ts
+import { ApiError } from '@colophon-cms/sdk';
+
+async function withRetry<T>(call: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await call();
+    } catch (error) {
+      if (!(error instanceof ApiError) || !error.retryable || attempt >= attempts) throw error;
+      const backoff = 2 ** (attempt - 1) * 1_000 * (0.5 + Math.random());
+      await new Promise((resolve) => setTimeout(resolve, error.retryAfterMs ?? backoff));
+    }
+  }
+}
+```
+
+A website reading the delivery API is far inside its limit as long as a cache serves most of its reads; see
+[Caching and ETags](/api/delivery/#caching-and-etags).

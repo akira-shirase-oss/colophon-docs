@@ -1,8 +1,74 @@
 ---
 title: Languages
-description: "Translations of an entry and how they are grouped."
+description: "Giving an entry its language, adding a version in another language with Versions → Add version, how translations are grouped and published separately, and what the delivery API does with them today."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+import { Steps } from '@astrojs/starlight/components';
+
+In Colophon a translation is an entry of its own: its own fields, drafts, history and publishing. The
+versions of one piece of content in different languages are joined in a **group**, so you can move
+between them. This page is for writers and translators.
+
+## Give an entry its language
+
+Every entry has a **Locale** in its side panel: *Which language this entry is written in, like en or
+pt-BR. Empty is the project's default.*
+
+<Steps>
+
+1. Open the entry. Under **Locale**, type a language tag: `en`, `fr`, `pt-BR`.
+
+2. It is saved with the entry, like any change.
+
+</Steps>
+
+A tag is a language code of 2 or 3 letters, optionally followed by a region or script, such as `pt-BR`
+or `zh-Hant`, up to 35 characters. The content type's list shows the tag beside each entry's title.
+
+## Add a version in another language
+
+<Steps>
+
+1. Open the entry you translate from. It needs a locale of its own first; without one, Colophon says
+   *Give this entry a locale before adding versions.*
+
+2. Under **Versions**, type the new language's tag in the small box (it suggests `fr`) and press **Add
+   version**.
+
+3. Colophon copies the entry's current draft into a new entry in that language, says *Added the fr
+   version.*, and opens it. Translate its fields: they start as a copy of the original.
+
+</Steps>
+
+![The side panel of the French version: Locale fr; Versions listing en, a link to the original, and This entry, fr; and the box to add another version](/screens/studio/versions.webp)
+
+**Versions** lists every entry in the group. The one you are in is **This entry**; the others are
+links, named by their language (**default** for one without a tag), that open their own editors.
+
+- A group holds one entry per language. Adding a language it already has is refused: *A version in that
+  locale already exists.*
+- An entry in a group always keeps a locale. You can change it to another tag, but not clear it.
+- A URL name field is copied with the language added (`lemon-tart-fr`), so the versions never share an
+  address.
+
+## Each version is published on its own
+
+Because each version is an entry, everything else works per version:
+
+- it has its own **History**, **Comments** and status (**Draft**, **Live**, **Changed**);
+- it is published, scheduled, taken down and rolled back on its own, in its own publish request or
+  together with others in one;
+- publishing the English version doesn't publish the French one, and taking one down leaves the others
+  live.
+
+To release several languages at once, put the versions in one publish request: see
+[Publishing and review](/studio/publishing/#publish-requests).
+
+## What your website gets
+
+The delivery API doesn't choose between languages yet. Its rows carry no locale, and there is no
+`?locale=` or fallback from one language to another. A site reads each version by its id, or filters on
+a field of its own that holds the language: see [Languages](/api/delivery/#languages) in the delivery
+API.
+
+Choosing a language when reading, with fallbacks set as an explicit project setting, is **Planned**.

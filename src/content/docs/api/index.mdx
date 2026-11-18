@@ -35,6 +35,9 @@ draft can never appear here: the delivery path reads with a database role that c
 curl "http://localhost:8080/content/v1/$PROJECT/production/recipes"
 ```
 
+Colophon answers no cross-origin (CORS) requests on `/content/v1`, so read it from your site's server or build
+step, or serve Colophon under your site's own origin; a page on another origin can't read it from the browser.
+
 → [Delivery API](/api/delivery/)
 
 ## Management API

@@ -1,8 +1,180 @@
 ---
 title: Database TLS
-description: "Connecting to PostgreSQL with verified TLS."
+description: "Why a PostgreSQL database on another machine must be reached with sslmode=verify-full, which certificates Colophon trusts, the loopback exceptions, managed databases, and the two logins."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
+This page is for anyone whose PostgreSQL runs somewhere other than the machine Colophon runs on: a managed
+database, or a database server of your own. Colophon talks to such a database only over TLS that proves the server
+is the database, and refuses to start otherwise. The quick start needs none of this: its database is on loopback.
+
+## The rule: `sslmode=verify-full` off this machine
+
+Encryption alone doesn't stop someone on the network path from answering as your database and reading every
+password and query. Only `sslmode=verify-full` checks both that a trusted authority signed the server's certificate
+**and** that the certificate names the host in the URL. So for any host that isn't this machine, Colophon accepts
+that mode and no other:
+
+| `sslmode` | Off this machine | Why |
+|---|---|---|
+| `disable`, `allow` | Refused | Sends passwords and content in plain text |
+| `prefer` (the default when the URL names none) | Refused | Falls back to plain text and takes any certificate |
+| `require` | Refused | Encrypts, but takes any certificate |
+| `verify-ca` | Refused | Doesn't check the name, and the driver trusts the public roots as well as `sslrootcert`, so any publicly trusted certificate for any name passes |
+| `verify-full` | **Accepted** | Checks the certificate and the name |
+
+`channel_binding=require` is refused on **every** host, loopback included: the driver doesn't implement channel
+binding and would silently ignore it. Remove it from the URL; `verify-full` is what proves who the server is.
+
+The rule is checked before any connection is made, and applies to both URLs Colophon uses:
+
+- **`COLOPHON_DATABASE_URL`**, the server's: `colophon-server` refuses to start, exit status `1`.
+- **`COLOPHON_MIGRATION_DATABASE_URL`**, the CLI's administration commands: `colophon admin …` exits with
+  status `2`.
+
+A good URL looks like this:
+
+```text
+postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-full
+```
+
+## What the refusal looks like
+
+The server names the host, what is wrong and how to fix it, and never prints the URL or its password:
+
+```text
+Error: loading configuration
+
+Caused by:
+    invalid configuration (1 problem(s)):
+      COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=require encrypts but takes any certificate. Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+```
+
+A URL with no `sslmode` at all is refused the same way, as `prefer`:
+
+```text
+      COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=prefer falls back to plain text and takes any certificate (it is the default when the URL names none). Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+```
+
+And `channel_binding=require`, even with `verify-full`:
+
+```text
+      COLOPHON_DATABASE_URL: database URL refused: channel_binding=require can't be honoured: this driver doesn't do channel binding and would ignore it. Remove channel_binding from the URL; sslmode=verify-full is what proves the server is the database
+```
+
+The CLI prints the same reason on one line, then exits `2`:
+
+```sh
+colophon admin migrate-status   # with COLOPHON_MIGRATION_DATABASE_URL set to a sslmode=require URL
+```
+
+```text
+error: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=require encrypts but takes any certificate. Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+```
+
+## Which certificates Colophon trusts
+
+Colophon speaks TLS to PostgreSQL itself (rustls), with the Mozilla set of public root certificates built into the
+binary. It trusts those, not the operating system's certificate store, so the same URL behaves the same on any
+host and in the container.
+
+- **A certificate from a public authority**, as managed databases usually have: nothing more to do.
+  `sslmode=verify-full` is enough.
+- **A certificate from your own authority**: add `sslrootcert=` with the path of the authority's certificate
+  (PEM). It is added to the built-in roots, not used instead of them.
+
+  ```text
+  postgres://colophon_app:PASSWORD@db.internal.example:5432/colophon?sslmode=verify-full&sslrootcert=/etc/colophon/db-ca.pem
+  ```
+
+  The file isn't secret, but the server must be able to read it: under the systemd unit, which runs as a dynamic
+  user, keep it world-readable (`0644`) somewhere under `/etc`.
+
+In both cases the host in the URL must be a name the certificate lists. Connecting by IP address works only if the
+certificate names that address.
+
+## When TLS isn't needed
+
+The database on **this machine** may be reached in plain text, because nothing on the network can sit in between:
+
+- the host `localhost`;
+- a loopback address: `127.0.0.1` (or anything in `127.0.0.0/8`) or `::1`;
+- a Unix socket, written as a `host=` path or a host that starts with `/`, as in
+  `postgres://colophon_app:PASSWORD@/colophon?host=/var/run/postgresql`.
+
+Any other name is "another machine", including names such as `db.localhost` and a Docker service name like
+`postgres`. That is why the quick start runs PostgreSQL inside the same network namespace as Colophon: it is on
+`127.0.0.1` there, unreachable from the host or any other container.
+
+## Managed databases
+
+The general rule covers them: take the URL the provider gives you and make sure it ends in `sslmode=verify-full`
+with no `channel_binding=require`. One provider needs more care:
+
+**Neon.** Its dashboard copies a URL ending `?sslmode=require&channel_binding=require`. Change the end to
+`?sslmode=verify-full`. Neon's certificates chain to a public root, so no `sslrootcert` is needed. Use the
+**direct** (unpooled) endpoint, not the pooled one: Colophon relies on `LISTEN` for live updates and on session
+advisory locks, and neither survives a transaction-mode pooler. Size `COLOPHON_DB_MAX_CONNECTIONS` to your plan's
+connection limit.
+
+:::caution[Not yet tried against a real Neon database]
+The TLS rule is tested against a TLS-only PostgreSQL with a private authority: `verify-full` connects, and a wrong
+name, an unknown authority and plain text all fail. A connection to Neon itself hasn't been made yet. Try
+`colophon admin migrate-status` against it first, and report what you find.
 :::
+
+The same caution about poolers applies to any provider: point Colophon at a direct connection.
+
+## Two logins: the server's and the migration login
+
+Colophon uses two different database logins, and they should never be swapped:
+
+| | Migration login | Application login |
+|---|---|---|
+| Who uses it | The CLI's `colophon admin …` commands | `colophon-server` |
+| Setting | `COLOPHON_MIGRATION_DATABASE_URL` or `…_FILE` (or `--database-url`, `--database-url-file`) | `COLOPHON_DATABASE_URL` or `…_FILE` |
+| What it is | The owner of Colophon's tables: it creates the roles and applies migrations. In production, a dedicated owner that isn't a superuser. | `colophon_app`, made by `colophon admin init-roles` with a password you generate. It owns no tables and can't bypass row-level security. |
+| When | Install, upgrades, backups and restores | Always, while the server runs |
+
+Both follow the same TLS rule. The [Installation](/installation/) guide makes them in this order:
+
+```sh
+sudo install -d -m 0700 /etc/colophon/credentials
+head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/app_password >/dev/null
+echo 'postgres://owner:…@db.example.com/colophon?sslmode=verify-full' | sudo tee /etc/colophon/credentials/migration_database_url >/dev/null
+sudo chmod 0400 /etc/colophon/credentials/*
+sudo colophon admin init-roles --database-url-file /etc/colophon/credentials/migration_database_url \
+  --app-password-file /etc/colophon/credentials/app_password
+sudo colophon admin migrate --database-url-file /etc/colophon/credentials/migration_database_url
+```
+
+Then `/etc/colophon/credentials/database_url` holds the server's URL, with the same host and the same
+`sslmode=verify-full`:
+
+```text
+postgres://colophon_app:<app_password>@db.example.com/colophon?sslmode=verify-full
+```
+
+`colophon admin init-roles` is safe to run again: roles that exist, passwords included, are left as they are.
+
+## Check the connection
+
+Before starting the server, `colophon admin migrate-status` only reads, and proves the migration login connects
+with verified TLS:
+
+```sh
+sudo colophon admin migrate-status --database-url-file /etc/colophon/credentials/migration_database_url
+```
+
+```text
+schema current: 68 migrations applied, none of 68 pending
+```
+
+Once the server runs, `colophon doctor` says whether the server's own login reaches the database
+(`database  up`); see [Monitoring](/self-hosting/monitoring/). A database that is reachable but refuses the
+certificate shows as `database  down`, and the reason is in the server's log.
+
+## Related
+
+- [Configuration](/self-hosting/configuration/): every database setting and how to read secrets from files.
+- [Backups and restore](/self-hosting/backups/): the third login, `colophon_backup`, for base backups.
+- [Security notes](/self-hosting/security/): what else an operator owns.

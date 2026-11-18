@@ -1,8 +1,333 @@
 ---
 title: Monitoring
-description: "Liveness, readiness, colophon doctor and logs."
+description: "Liveness and readiness, what degraded means, colophon doctor and its exit codes, the container health check, structured logs, graceful shutdown, and what Colophon doesn't expose."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+This page is for whoever keeps a Colophon running: how to ask whether it is up and ready, what each answer means,
+what it writes to its logs, and how it stops. Everything here works the same in the quick start and under systemd.
+
+## Health endpoints
+
+Three endpoints answer without a credential and are never rate-limited. Every answer carries
+`cache-control: no-store`, so no proxy keeps them.
+
+| Endpoint | Answers | Use it for |
+|---|---|---|
+| `GET /livez` | Whether the process responds. It checks nothing else. | Restarting a process that has hung |
+| `GET /readyz` | Whether this process can safely serve now, and which dependency isn't up | Load balancers, uptime checks, `colophon doctor` |
+| `GET /version` | Which build is running | Upgrades, bug reports |
+
+### `/livez`
+
+```sh
+curl -i http://localhost:8080/livez
+```
+
+```http
+HTTP/1.1 200 OK
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee83-ee17-7418-aede-2ca52dcafe80
+content-length: 17
+date: Wed, 18 Nov 2026 11:56:26 GMT
+
+{"status":"live"}
+```
+
+`/livez` deliberately ignores the database: restarting a process can't fix a database outage, so a liveness check
+that failed then would only make things worse.
+
+### `/readyz`
+
+```sh
+curl -i http://localhost:8080/readyz
+```
+
+```http
+HTTP/1.1 200 OK
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee83-ee26-73e8-a236-b18cfe47d115
+content-length: 71
+date: Wed, 18 Nov 2026 11:56:26 GMT
+
+{"status":"ready","role":"all","checks":{"database":"up","cache":"up"}}
+```
+
+The answer never runs a query. Background checks ping PostgreSQL and the cache every
+`COLOPHON_PROBE_INTERVAL_MS` (2 seconds), each with a deadline of `COLOPHON_PROBE_TIMEOUT_MS` (1 second), and
+`/readyz` only reads their last result, so calling it often costs nothing and a slow database can't make it slow.
+The database check uses a connection of its own, never the pool requests use, so a busy server isn't mistaken for a
+down database. If a check ever stops running, its dependency is marked `down`: readiness can't stay stuck at `up`.
+
+`status` is one of five values:
+
+| `status` | HTTP | When | Send traffic? |
+|---|---|---|---|
+| `starting` | `503` | The database hasn't been checked yet | No |
+| `ready` | `200` | The database is up, and the cache is up or not configured | Yes |
+| `degraded` | `200` | The database is up, but the cache is down | Yes |
+| `not_ready` | `503` | The database is down | No |
+| `draining` | `503` | The server is shutting down | No |
+
+Each entry in `checks` is `up`, `down`, `unknown` (not checked yet) or `not_configured` (no cache is set). `role` is
+the process's [role](/self-hosting/configuration/#roles). The body names states only: never hosts, ports or error
+messages.
+
+**Degraded** means the cache is unreachable. Colophon keeps serving everything, reads and writes, from PostgreSQL;
+delivery reads are slower because every one reaches the database, and each server counts rate limits on its own
+instead of sharing the count. That is why `degraded` still answers `200`: a load balancer should keep sending
+traffic. Here is a server whose cache is down:
+
+```http
+HTTP/1.1 200 OK
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee89-d304-723f-9cc0-55924e13d4f1
+content-length: 76
+connection: close
+date: Wed, 18 Nov 2026 12:02:52 GMT
+
+{"status":"degraded","role":"all","checks":{"database":"up","cache":"down"}}
+```
+
+And the same server while its database didn't answer:
+
+```http
+HTTP/1.1 503 Service Unavailable
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee89-b998-74cc-bcb1-b370cc8c2d80
+content-length: 79
+connection: close
+date: Wed, 18 Nov 2026 12:02:45 GMT
+
+{"status":"not_ready","role":"all","checks":{"database":"down","cache":"down"}}
+```
+
+A server without a cache at all is `ready`, with `"cache":"not_configured"`.
+
+### `/version`
+
+```sh
+curl -s http://localhost:8080/version
+```
+
+```json
+{"version":"0.1.0-alpha.1","commit":"…","build_date":"2026-11-18","api":["v1"]}
+```
+
+`commit` is the full commit the binary was built from (shortened here). `colophon-server --version` and
+`colophon --version` print the same build. Quote it when you report a problem.
+
+## `colophon doctor`
+
+`colophon doctor` reads a server's `/readyz` and says, in words and with its exit status, whether the server is
+ready and which dependency isn't. It reports exactly what a load balancer sees.
+
+```sh
+colophon doctor --server http://127.0.0.1:58000              # systemd install
+docker compose exec colophon colophon doctor --server http://127.0.0.1:8080   # quick start
+```
+
+```text
+server    http://127.0.0.1:8080
+role      all
+status    ready
+cache     up
+database  up
+```
+
+A server whose cache is down:
+
+```text
+server    http://127.0.0.1:8080
+role      all
+status    degraded
+cache     down
+database  up
+```
+
+`--json` prints one result instead, the same envelope every `colophon` command uses:
+
+```json
+{"command":"doctor","data":{"checks":{"cache":"up","database":"up"},"role":"all","server":"http://127.0.0.1:8080","status":"ready"},"version":2}
+```
+
+When nothing answers, it says so on standard error, and with `--json` also as an `error` result:
+
+```text
+error: http://127.0.0.1:8099: connection failed
+```
+
+```json
+{"command":"doctor","error":{"code":"unreachable","message":"http://127.0.0.1:8099: connection failed"},"version":2}
+```
+
+| Exit status | Meaning |
+|---|---|
+| `0` | `ready` |
+| `5` | Anything else: `degraded`, `not_ready`, `starting`, `draining`, or no answer within the timeout |
+| `2` | `--server` isn't an `http://` or `https://` URL |
+| `6` | Something answered, but not with a readiness report |
+
+Note that `degraded` exits `5`: `doctor` asks "is everything up?", where `/readyz` asks "may I send traffic?".
+
+| Option | Default | |
+|---|---|---|
+| `--server` | `http://localhost:58000`, or `COLOPHON_SERVER` | The server's base URL |
+| `--timeout-ms` | `5000` | Give up after this many milliseconds (1 to 120,000) |
+| `--json` | | One JSON result instead of text |
+
+### The container's health check
+
+The image's `HEALTHCHECK` runs `colophon doctor --server http://127.0.0.1:8080 --timeout-ms 3000` every 10 seconds,
+with a 5-second timeout, a 60-second start period and 3 retries. It is what `docker compose up --wait` waits for and
+what `docker compose ps` shows.
+
+Because `doctor` exits `5` when degraded, **a cache outage marks the container `unhealthy`** even though `/readyz`
+still answers `200` and Colophon still serves. Docker doesn't restart a container for being unhealthy; look at
+`docker compose ps` and `docker compose logs valkey`.
+
+### Load balancers and uptime checks
+
+- Point a load balancer at `/readyz`, and take a server out of rotation on anything but `200`.
+- Keep `COLOPHON_DRAIN_DELAY_MS` (5 seconds) longer than the balancer takes to notice: with checks every
+  500 milliseconds and two failures to drop a server, that is about a second.
+- Check `/readyz` from another machine as well as locally, so an outage of the host or its network is noticed too.
+- Under systemd there is no built-in watchdog: run `colophon doctor` from your monitoring and alert on a non-zero
+  exit.
+
+## Logs
+
+Colophon writes structured logs to its standard output. Under systemd they are in the journal
+(`journalctl -u colophon`); in the quick start, `docker compose logs colophon`. The first administrator's setup code
+is printed to standard error, in a plain box, beside them.
+
+| Setting | Default | |
+|---|---|---|
+| `COLOPHON_LOG_FORMAT` | `json` | `json`: one object per line, for a log pipeline. `pretty`: multi-line and coloured, for a terminal. The quick start sets `pretty`. |
+| `COLOPHON_LOG` | `info` | Which events to log, as `tracing` filter directives, such as `warn` or `info,colophon_api=debug`. An invalid filter stops the server at start. |
+
+At `info`, a JSON log shows the server starting, its dependencies changing state (once per change, not once per
+check), and work events such as releases:
+
+```json
+{"timestamp":"2026-11-18T12:02:00.427492Z","level":"INFO","message":"listening","local_addr":"127.0.0.1:8080","role":"all","version":"0.1.0-alpha.1","commit":"…","target":"colophon_server"}
+{"timestamp":"2026-11-18T12:02:00.432178Z","level":"WARN","message":"dependency is down","dependency":"cache","cause":"Connection refused (os error 111): Connection refused (os error 111)","target":"colophon_server::probes"}
+{"timestamp":"2026-11-18T12:02:00.446435Z","level":"INFO","message":"dependency is up","dependency":"database","target":"colophon_server::probes"}
+{"timestamp":"2026-11-18T12:02:00.511837Z","level":"INFO","message":"worker started","owner":"colophon-1-1795003320485927513","target":"colophon_worker"}
+```
+
+What to alert on:
+
+- **`ERROR`** lines: `request failed` is a server-side failure, with the error `code` and its cause.
+- **`WARN`** lines: `dependency is down`, and saturation, which you can act on:
+  `request refused: no database connection free`, `request refused: project work bound full`,
+  `request refused: installation payload bound full`.
+
+A client's mistake (a `404`, a validation error) is logged only at `debug`, as `request rejected`, so it never
+pages anyone.
+
+### A line per request
+
+Request lines are at `debug`, because at serving rates a line per request would cost more than the requests. Turn
+them on with `COLOPHON_LOG=info,tower_http=debug`. Each request then gets lines like this:
+
+```json
+{"timestamp":"2026-11-18T12:08:40.857154Z","level":"DEBUG","message":"finished processing request","latency":"2247 μs","status":404,"target":"tower_http::trace::on_response","span":{"commit":"…","method":"GET","path":"/content/v1/00000000-0000-7000-8000-000000000000/production/recipes","request_id":"01a1ee8f-2496-71be-a025-001fed29dc48","route":"/content/v1/{project}/{environment}/{collection}","version":"0.1.0-alpha.1","name":"request"}}
+```
+
+- `request_id` is the same id as the response's `x-request-id` header and an error's `request_id`, so a user's
+  report leads to exactly one line. A caller's own `x-request-id` is kept if it is safe to log, and replaced if not.
+- `route` is the route's template, good for grouping; `path` is the path **without its query string**. That request
+  asked for `?limit=5`; the log doesn't say so.
+- `version` and `commit` say which build answered.
+
+Counting answers by route and status from a JSON log:
+
+```sh
+jq -r 'select(.target=="tower_http::trace::on_response") | "\(.span.route) \(.status)"' colophon.log \
+  | sort | uniq -c | sort -rn
+```
+
+### What is never logged
+
+Colophon keeps these out of its logs by design: secrets from its configuration (a refused setting names the
+variable, never the value, and a refused database URL never includes the URL), passwords, tokens and session
+cookies, query strings, the token in a sign-in link and the code in a device sign-in (a path that holds one is
+written with `{token}` or `{code}` in its place), the mail provider's key and the links it sends, and the text of
+drafts.
+
+Colophon doesn't rotate or cap its own logs. Set rotation in journald or in Docker's logging driver.
+
+## Metrics
+
+Colophon has no metrics endpoint: there is no `/metrics`, no Prometheus format and no OpenTelemetry export. The
+signals are in the places above:
+
+| Signal | Where |
+|---|---|
+| Ready, degraded, down | `/readyz` and `colophon doctor` |
+| Errors and latency | Request lines (`status`, `latency`) at `tower_http=debug` |
+| Cache hits | The delivery API's `colophon-cache` header: `hit`, `miss`, `coalesced` or `bypass` |
+| Deliveries waiting or failed | The `jobs` table, read as the migration login |
+| Database connections, locks and WAL | PostgreSQL's own views, such as `pg_stat_activity` |
+| Cache memory and evictions | Valkey's `INFO` |
+
+For example, the delivery backlog by state, with its oldest due time:
+
+```sh
+psql "$COLOPHON_MIGRATION_DATABASE_URL" -XAtq -c \
+  "select status, count(*), min(next_attempt_at) from jobs group by status"
+```
+
+A job's state is `pending`, `running`, `retrying`, `held`, `succeeded`, `failed` or `superseded`.
+
+## Graceful shutdown
+
+On `SIGTERM` (what `systemctl stop` and `docker stop` send) or `SIGINT`, the server stops in order:
+
+1. `/readyz` answers `draining` (`503`), so load balancers stop sending new requests;
+2. after `COLOPHON_DRAIN_DELAY_MS` (5 seconds) it stops accepting connections;
+3. requests already running finish;
+4. if they haven't finished `COLOPHON_SHUTDOWN_GRACE_MS` (25 seconds) after the signal, it exits anyway and says so;
+5. the worker stops claiming work. A delivery it abandons is claimed again by another worker once its lease
+   (`COLOPHON_WORKER_LEASE_MS`, 30 seconds) runs out.
+
+While it drains:
+
+```http
+HTTP/1.1 503 Service Unavailable
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee89-f34f-7526-9ca7-a36118046ca6
+content-length: 76
+connection: close
+date: Wed, 18 Nov 2026 12:03:00 GMT
+
+{"status":"draining","role":"all","checks":{"database":"up","cache":"down"}}
+```
+
+And its log:
+
+```json
+{"timestamp":"2026-11-18T12:02:59.379580Z","level":"INFO","message":"shutdown signal received","signal":"SIGTERM","target":"colophon_server"}
+{"timestamp":"2026-11-18T12:02:59.379628Z","level":"INFO","message":"shutting down: readiness is now draining","drain_delay_ms":"5000","target":"colophon_server::shutdown"}
+{"timestamp":"2026-11-18T12:03:04.379413Z","level":"INFO","message":"drain delay over: no longer accepting connections","target":"colophon_server::shutdown"}
+{"timestamp":"2026-11-18T12:03:04.382378Z","level":"INFO","message":"shutdown complete","target":"colophon_server"}
+```
+
+If requests outlive the grace, the last lines are `shutdown deadline passed with requests still in flight` and
+`shutdown complete, abandoning requests still in flight`, at `WARN`.
+
+Give the process manager at least the grace before it kills: the systemd unit waits 35 seconds
+(`TimeoutStopSec=35`). Docker waits only 10 seconds by default, so in the quick start add `stop_grace_period: 30s`
+to the `colophon` service in your `compose.override.yaml`.
+
+## Related
+
+- [Configuration](/self-hosting/configuration/): every probe, shutdown and log setting.
+- [Installation](/installation/): where the quick start and the systemd unit run `colophon doctor`.
+- [Backups and restore](/self-hosting/backups/): what to watch in the backup schedule.
+- [Rate limits](/api/rate-limits/): what clients see when a limit refuses them.
