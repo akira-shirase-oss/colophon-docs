@@ -62,6 +62,15 @@
 	--sl-color-hairline: #2a2a2a;
 	--c-live: #74c69d;
 	--c-warn: #e9b44c;
+	/* Changelog cards (src/pages/changelog): a step lighter than the page, lighter again when open. */
+	--card-bg: #1a1a1a;
+	--card-bg-hover: #1f1f1f;
+	--card-bg-open: #242424;
+	--card-sheen: rgba(255, 255, 255, 0.05);
+	--card-border-open: #3a3a3a;
+	--card-muted: #a8a8a8;
+	--chip-bg: #2b2b2b;
+	--card-attention: rgba(233, 180, 76, 0.07);
 	/* Asides in quiet tints of the same few hues, not Starlight's saturated defaults */
 	--sl-color-blue-low: #162030;
 	--sl-color-blue: #6f8fc6;
@@ -99,6 +108,14 @@
 	--sl-color-hairline: #e5e5e5;
 	--c-live: #1f7a4d;
 	--c-warn: #8a5a00;
+	--card-bg: #ffffff;
+	--card-bg-hover: #fafafa;
+	--card-bg-open: #f7f8fb;
+	--card-sheen: rgba(51, 85, 138, 0.05);
+	--card-border-open: #d3d9e3;
+	--card-muted: #615a52;
+	--chip-bg: #f1efec;
+	--card-attention: rgba(138, 90, 0, 0.05);
 	--sl-color-blue-low: #eef2f9;
 	--sl-color-blue: #33558a;
 	--sl-color-blue-high: #1d3355;

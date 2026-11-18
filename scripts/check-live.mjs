@@ -48,6 +48,27 @@ const operations = await page.locator('text=/livez').count();
 if (operations === 0) problems.push('the API reference rendered no operations');
 if (errors.length > 0) problems.push(`console errors: ${errors.slice(0, 3).join(' | ')}`);
 
+// The changelog's cards: an entry's #anchor opens it; Enter toggles a card and Esc closes it; the
+// state is the button's aria-expanded, and the body is shown exactly when it says true.
+{
+	const changelog = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+	await changelog.goto(`${base}/changelog/`);
+	const anchor = await changelog.locator('article.change').first().getAttribute('id');
+	await changelog.goto(`${base}/changelog/#${anchor}`);
+	await changelog.waitForTimeout(300);
+	const card = (id) => changelog.locator(`[id="${id}"] .change-toggle`);
+	if ((await card(anchor).getAttribute('aria-expanded')) !== 'true') problems.push(`/changelog/#${anchor} didn't open the entry`);
+	const second = changelog.locator('article.change .change-toggle').nth(1);
+	const body = changelog.locator(`[id="${await second.getAttribute('aria-controls')}"]`);
+	if ((await second.getAttribute('aria-expanded')) !== 'false' || (await body.isVisible())) problems.push('a changelog card is open before anyone opened it');
+	await second.focus();
+	await changelog.keyboard.press('Enter');
+	if ((await second.getAttribute('aria-expanded')) !== 'true' || !(await body.isVisible())) problems.push("Enter didn't open a changelog card");
+	await changelog.keyboard.press('Escape');
+	if ((await second.getAttribute('aria-expanded')) !== 'false' || (await body.isVisible())) problems.push("Esc didn't close the open changelog card");
+	await changelog.close();
+}
+
 const phone = await browser.newPage({ viewport: { width: 360, height: 780 } });
 for (const path of pages) {
 	await phone.goto(base + path);

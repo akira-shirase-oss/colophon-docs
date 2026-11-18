@@ -36,6 +36,7 @@ npm run build                  # the site in dist/, checked
 npm run sync:openapi           # copy the OpenAPI document from colophon-cms main
 npm test                       # the snippet runner's own tests
 scripts/check.sh               # the gate before every push: scripts/check.sh && git push
+npm run hooks                  # once per clone: git runs that gate before every push, and a failure blocks it
 ```
 
 Running the examples needs Docker, `curl` and `jq`. With nothing on port 8080:
