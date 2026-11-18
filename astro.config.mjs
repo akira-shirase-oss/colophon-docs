@@ -39,12 +39,14 @@ export default defineConfig({
 				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
 				// An accessibility fix to Starlight's output: the search button shows "Search" and its
 				// shortcut (⌘K or Ctrl K), so its name says both, as speech input reads them (WCAG 2.5.3).
+				// Starlight swaps ⌘ for Ctrl off a Mac, sometimes after this runs, so the name follows
+				// the shortcut's text whenever it changes.
 				// (Wide tables and code blocks take keyboard focus from the build instead, WCAG 2.1.1:
 				// src/lib/focusable-code.mjs and scripts/focusable-tables.mjs, so they do without JavaScript too.)
 				{
 					tag: 'script',
 					content:
-						"document.addEventListener('DOMContentLoaded',()=>{for(const b of document.querySelectorAll('button[data-open-modal]')){const k=[...b.querySelectorAll('kbd kbd')].map(e=>e.textContent).join(' ');if(k)b.setAttribute('aria-label','Search '+k)}});",
+						"document.addEventListener('DOMContentLoaded',()=>{for(const b of document.querySelectorAll('button[data-open-modal]')){const n=()=>{const k=[...b.querySelectorAll('kbd kbd')].map(e=>e.textContent.trim()).join(' ');if(k)b.setAttribute('aria-label','Search '+k)};n();const s=b.querySelector('kbd');if(s)new MutationObserver(n).observe(s,{subtree:true,childList:true,characterData:true})}});",
 				},
 			],
 			expressiveCode: {
