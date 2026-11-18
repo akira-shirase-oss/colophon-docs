@@ -29,7 +29,7 @@ releases exist, each will carry a `compose.yaml` that pins its image, and prebui
 
 ## Docker Compose
 
-```sh
+```sh not-run="the quick start's install, which CI runs from the quick start page"
 git clone https://github.com/akira-shirase-oss/colophon-cms.git
 cd colophon-cms
 docker build -f deploy/image/Dockerfile \
@@ -79,7 +79,7 @@ in [Configuration](/self-hosting/configuration/).
 The quick start listens on `127.0.0.1` only. To serve it to others, put a TLS reverse proxy (Caddy, nginx, a
 load balancer) in front of `127.0.0.1:8080`, and tell Colophon its public address and the proxy's:
 
-```yaml title="compose.override.yaml"
+```yaml title="compose.override.yaml" not-run="changes how the quick start runs"
 services:
   colophon:
     environment:
@@ -94,7 +94,7 @@ responses.
 
 ### Stop, start and remove
 
-```sh
+```sh not-run="todo: stops and starts the stack"
 docker compose stop            # stop, keeping everything
 docker compose up -d --wait    # start again
 docker compose down            # remove the containers; content stays in the volumes
@@ -119,7 +119,7 @@ end to end on a real host, so treat a first install as a trial and report what y
 Until there are release downloads, take the static Linux binaries and the Studio out of the image you built
 for the quick start (they match the build machine's architecture, `x86_64` or `aarch64`):
 
-```sh
+```sh not-run="a production install"
 id=$(docker create colophon:local)
 docker cp "$id:/usr/local/bin/colophon-server" .
 docker cp "$id:/usr/local/bin/colophon" .
@@ -134,7 +134,7 @@ sudo mkdir -p /usr/local/share/colophon && sudo cp -r studio /usr/local/share/co
 PostgreSQL 18, with an owner login that runs migrations. The server's own roles are made by the CLI with a
 password you generate, and secrets live in files readable by root only:
 
-```sh
+```sh not-run="a production install under systemd"
 sudo install -d -m 0700 /etc/colophon/credentials
 head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/app_password >/dev/null
 echo 'postgres://owner:…@db.example.com/colophon?sslmode=verify-full' | sudo tee /etc/colophon/credentials/migration_database_url >/dev/null
@@ -160,7 +160,7 @@ machine must use `sslmode=verify-full`: the server refuses to start with anythin
 
 ### 4. The service and the proxy
 
-```sh
+```sh not-run="a production install under systemd"
 sudo install -m 0644 colophon.env /etc/colophon/colophon.env     # then edit it
 sudo install -m 0644 colophon.service /etc/systemd/system/colophon.service
 sudo systemctl daemon-reload && sudo systemctl enable --now colophon
@@ -179,7 +179,7 @@ updates reach browsers as they happen.
 
 The setup code is in the service's log:
 
-```sh
+```sh not-run="a production install under systemd"
 journalctl -u colophon | grep "Setup code"
 ```
 
@@ -193,7 +193,7 @@ the server refuses a database whose schema it doesn't know.
 **Docker Compose.** Pull and rebuild, then start again; the `migrate` service applies the new schema before
 the new Colophon starts:
 
-```sh
+```sh not-run="an upgrade: pulls and rebuilds"
 cd colophon-cms && git pull
 docker build -f deploy/image/Dockerfile \
   --build-arg COLOPHON_COMMIT="$(git rev-parse HEAD)" \

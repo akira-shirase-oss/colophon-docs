@@ -12,9 +12,20 @@ a database elsewhere, sign-in through an identity provider, email, limits or log
 
 The server reads its environment once, when it starts, checks every setting, and then never reads it again. If
 anything is wrong it refuses to start, lists **every** problem at once so one restart fixes them all, and exits
-with status `1`:
+with status `1`. Try it in the quick start's folder: a second server in the container, given six mistakes, stops
+before it listens on anything:
 
-```text
+{/* snippet ops: snippets/cd-quickstart.sh */}
+
+```sh run=ops stderr=1 exit=1
+docker compose exec -T \
+  -e COLOPHON_DATABASE_URL=postgres://colophon@127.0.0.1/colophon -e COLOPHON_LOG= \
+  -e COLOPHON_REQUEST_TIMEOUT_MS=10s -e COLOPHON_S3_SECRET_KEY_FILE=/lab/missing \
+  -e COLOPHON_ALLOW_PRIVATE_DESTINATIONS=yes \
+  colophon colophon-server
+```
+
+```text output=ops
 Error: loading configuration
 
 Caused by:
@@ -57,11 +68,17 @@ One binary runs every part of Colophon. `--role` (or `COLOPHON_ROLE`) picks whic
 Every role listens on `COLOPHON_LISTEN_ADDR` and answers `/livez` and `/readyz`, whose body names the role, so two
 processes on one host need two addresses. In this build a `worker` process also answers the same HTTP routes as an
 `api` one, but without the live-events listener, so its event streams never hear a change: send people and websites
-only to `api` or `all` processes. Invalid values are refused before anything else:
+only to `api` or `all` processes. Invalid values are refused before anything else, with status `2`:
 
-```text
-Error: invalid value 'web' for '--role <ROLE>'
+```sh run=ops stderr=1 exit=2
+docker compose exec -T colophon colophon-server --role web
+```
+
+```text output=ops
+error: invalid value 'web' for '--role <ROLE>'
   [possible values: api, worker, all]
+
+For more information, try '--help'.
 ```
 
 :::caution[In the container, set the command, not `COLOPHON_ROLE`]
@@ -99,7 +116,7 @@ The quick start's `compose.yaml` already sets what the stack needs: the database
 generated secret files. Put your own settings in a `compose.override.yaml` beside it; Compose merges the two, and
 `docker compose up -d --wait` applies the change.
 
-```yaml title="compose.override.yaml"
+```yaml title="compose.override.yaml" not-run="changes how the quick start runs; the settings in it are checked by the server at start, as above"
 services:
   colophon:
     environment:
@@ -130,7 +147,7 @@ run).
 The systemd install splits settings in two. Everything that isn't secret goes in
 `/etc/colophon/colophon.env`, which the unit loads with `EnvironmentFile=`:
 
-```sh title="/etc/colophon/colophon.env"
+```sh title="/etc/colophon/colophon.env" not-run="a production install under systemd"
 COLOPHON_LISTEN_ADDR=127.0.0.1:58000
 COLOPHON_PUBLIC_URL=https://cms.example.com
 COLOPHON_TRUSTED_PROXIES=127.0.0.1/32
@@ -145,7 +162,7 @@ COLOPHON_S3_ACCESS_KEY=GK0123456789abcdef01234567
 Secrets are files in `/etc/colophon/credentials/`, readable by root only. The unit hands each one to the service as
 a systemd credential and points the `_FILE` setting at it (`%d` is the service's private credentials directory):
 
-```text title="/etc/systemd/system/colophon.service (excerpt)"
+```text title="/etc/systemd/system/colophon.service (excerpt)" not-run="a production install under systemd"
 EnvironmentFile=/etc/colophon/colophon.env
 LoadCredential=database_url:/etc/colophon/credentials/database_url
 LoadCredential=cache_url:/etc/colophon/credentials/cache_url
@@ -159,7 +176,7 @@ Environment=COLOPHON_STUDIO_DIR=/usr/local/share/colophon/studio
 To add a secret the unit doesn't list, such as the identity provider's or the mail provider's, write it to a file
 and add the two lines in a drop-in with `sudo systemctl edit colophon`:
 
-```text
+```text not-run="a systemd drop-in"
 [Service]
 LoadCredential=oidc_client_secret:/etc/colophon/credentials/oidc_client_secret
 Environment=COLOPHON_OIDC_CLIENT_SECRET_FILE=%d/oidc_client_secret

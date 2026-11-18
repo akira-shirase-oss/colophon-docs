@@ -21,7 +21,7 @@ the first frame of every stream is a cue to read everything again.
 
 ## The public stream
 
-```sh
+```sh not-run="keeps the stream open until you stop it"
 curl -N "http://localhost:8080/content/v1/$PROJECT/production/events"
 ```
 
@@ -72,7 +72,7 @@ A reader for Node.js 18 or later, with only `fetch`. (`EventSource` isn't built 
 refusal's status or `Retry-After`.) It keeps the newest release number it has seen and tells its listeners
 only when that number goes up:
 
-```ts
+```ts not-run="todo: code that keeps a stream open"
 const CMS = 'http://localhost:8080';
 const PROJECT = process.env.PROJECT!;
 const delivery = `${CMS}/content/v1/${PROJECT}/production`;
@@ -197,7 +197,7 @@ data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
 
 And with a publish instead of a save, the same stream carried:
 
-```text
+```text not-run="todo: events read from a stream"
 event: change
 data: {"e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"releases"}
 
@@ -247,7 +247,7 @@ change is always reported. Count nothing: on each frame, read again what that ki
 with `fetch`, as in the [public example](#listen-from-your-sites-server), adding the header and handling the
 three event names:
 
-```ts
+```ts not-run="todo: code that keeps a stream open"
 const url = `http://localhost:8080/api/v1/projects/${process.env.PROJECT}/environments/production/events`;
 
 type Hint = { k: string; c?: string; e?: string };
@@ -302,7 +302,7 @@ Run it in a loop that opens the stream again whenever `listen` returns or throws
 
 A ninth stream on the same token, while eight are open:
 
-```http
+```http not-run="needs more open streams than the limit allows"
 HTTP/1.1 429 Too Many Requests
 content-type: application/json
 retry-after: 30

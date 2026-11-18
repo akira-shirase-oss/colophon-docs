@@ -42,7 +42,9 @@ quick start's folder, where `compose.yaml` is.
 
 ### Back up
 
-```sh
+{/* snippet ops: snippets/cd-quickstart.sh */}
+
+```sh run=ops
 # The database, as the owner, with the password read inside the container (never on your shell):
 docker compose exec -T postgres sh -c \
   'PGPASSWORD="$(cat /run/secrets/postgres/owner_password)" pg_dump -Fc -h 127.0.0.1 -U colophon colophon' \
@@ -71,15 +73,17 @@ rely on them, and report what you find.
 
 1. Install a fresh quick start and start it once: `docker compose up -d --wait`.
 
+   {/* snippet ops: snippets/fresh-quickstart.sh */}
+
 2. Stop Colophon and Garage:
 
-   ```sh
+   ```sh run=ops
    docker compose stop colophon garage
    ```
 
 3. Load the dump, with the same wrapper that keeps the password inside the container:
 
-   ```sh
+   ```sh run=ops
    docker compose exec -T postgres sh -c \
      'PGPASSWORD="$(cat /run/secrets/postgres/owner_password)" pg_restore --clean --if-exists -h 127.0.0.1 -U colophon -d colophon' \
      <colophon.dump
@@ -87,20 +91,33 @@ rely on them, and report what you find.
 
 4. Unpack the uploads into the `garage` volume:
 
-   ```sh
+   ```sh run=ops
    docker run --rm -v colophon-quickstart_garage:/data -v "$PWD":/backup alpine:3.23 \
      tar -xzf /backup/uploads.tar.gz -C /data
    ```
 
 5. Empty the cache, then start everything again:
 
-   ```sh
+   ```sh run=ops
    docker compose restart valkey
    docker compose up -d --wait
    ```
 
    Valkey keeps nothing on disk, so a restart empties it. Without that, answers cached from releases made after
    the backup could be served again under the same release numbers until they expire.
+
+6. Check that the content came back: the published entries, through the same token as before the backup:
+
+   ```sh run=ops
+   curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes" | jq -r '.data[].title'
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $COLOPHON_TOKEN" \
+     "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries"
+   ```
+
+   ```text output=ops
+   Lemon tart
+   200
+   ```
 
 </Steps>
 
@@ -121,7 +138,7 @@ commands below are the same everywhere. The scripts need `jq`, `openssl`, `docke
 PostgreSQL archives every finished WAL segment through its `archive_command`. Set, in `postgresql.conf`, and restart
 PostgreSQL:
 
-```text
+```text not-run="a production postgresql.conf; the quick start has no WAL archive"
 wal_level = replica
 archive_mode = on
 archive_timeout = 60s
@@ -148,7 +165,7 @@ Base backups run as `colophon_backup`, a login with replication rights and no ac
 credential is separate from the server's. `colophon admin init-roles` makes it when you give it a password file;
 existing roles are left as they are, so running it again is safe:
 
-```sh
+```sh not-run="a production install with systemd credentials under /etc/colophon"
 head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/backup_password >/dev/null
 sudo chmod 0400 /etc/colophon/credentials/backup_password
 sudo colophon admin init-roles --database-url-file /etc/colophon/credentials/migration_database_url \
@@ -160,7 +177,7 @@ Allow it a replication connection in PostgreSQL's `pg_hba.conf`.
 
 ### 3. Take, verify and keep backups
 
-```sh
+```sh not-run="the production backup script, which needs a WAL archive and a backup key"
 scripts/backup.sh create [root]              # a base backup into <root>/<UTC stamp>/ (default root: backups)
 scripts/backup.sh verify <dir>               # decrypt and check one backup
 scripts/backup.sh daily [root]               # create + verify + ledger export + retention, for a scheduler
@@ -194,7 +211,7 @@ The export needs the `colophon` CLI, built in the clone (`target/release/colopho
 runs as the migration login from `COLOPHON_MIGRATION_DATABASE_URL`, or the development stack's own when that is unset.
 There is no daemon; use cron, a systemd timer or launchd:
 
-```text
+```text not-run="a crontab line"
 17 3 * * *  cd /path/to/checkout && scripts/backup.sh daily >> backups/daily.log 2>&1
 ```
 
@@ -210,12 +227,12 @@ Every deletion Colophon makes is recorded in its deletion ledger. A restore repl
 deleted after the backup, such as a page taken down for legal reasons, stays deleted. Export it off the database host
 with every backup (`daily` does), and more often if you can: a restore can only replay deletions an export holds.
 
-```sh
+```sh not-run="a production install with systemd credentials under /etc/colophon"
 colophon admin ledger-export --database-url-file /etc/colophon/credentials/migration_database_url \
   --out /backups/ledger-export.jsonl
 ```
 
-```text
+```text not-run="the output of the command above"
 exported the deletion ledger to file /backups/ledger-export.jsonl (0 rows, through id 0)
 ```
 
@@ -257,7 +274,7 @@ restored database into service is then your step. It signs in to the restored cl
 logins, so today it restores backups of that stack only. `prepare` decrypts the payload into the workspace before
 unpacking it, and deletes it after: keep the workspace on a disk only you can read.
 
-```sh
+```sh not-run="restores the production backups made above"
 scripts/restore.sh backups/<stamp> --ledger backups/<stamp>/ledger-export.jsonl   # every stage still pending
 scripts/restore.sh status restores/<stamp>                                        # where each stage stands
 scripts/restore.sh backups/<stamp> --step ledger --ledger <file>                 # one stage again, after fixing what blocked it

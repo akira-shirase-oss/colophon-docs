@@ -26,7 +26,8 @@
 //                                                   block that is none of these
 //
 // A block that can't run here (a systemd unit, a Cloudflare step, a shape rather than a command)
-// says so in its info string, `not-run="why"`, so the gap is counted and visible, never silent.
+// says so in its info string, `not-run="why"`, so the gap is counted and visible, never silent. One
+// that could run but isn't wired up yet says `not-run="todo: why"`, and is counted apart.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -36,7 +37,7 @@ const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const DOCS = join(ROOT, 'src/content/docs');
 const DEFAULT_BASE = 'http://localhost:8080';
 /** Suites in the order they run; later suites build on the state earlier ones leave. */
-const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'cli', 'sdk', 'mcp', 'ops'];
+const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'graphql', 'cli', 'sdk', 'mcp', 'ops'];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -125,11 +126,21 @@ function jsonBody(body) {
 	}
 }
 
+/** A JSON body indented, with every number exactly as the server wrote it (`45.0` stays `45.0`). */
+function indent(body) {
+	try {
+		const exact = JSON.parse(body.trim(), (key, value, context) => (typeof value === 'number' ? JSON.rawJSON(context.source) : value));
+		return JSON.stringify(exact, null, 2);
+	} catch {
+		return null;
+	}
+}
+
 /** What the page shows: headers as they came, a JSON body indented. */
 export function display(text) {
 	const { head, body } = split(text.replace(new RegExp(escape(base), 'g'), DEFAULT_BASE));
 	const json = jsonBody(body);
-	const shown = json === null ? body.trimEnd() : JSON.stringify(json, null, 2);
+	const shown = json === null ? body.trimEnd() : (indent(body) ?? JSON.stringify(json, null, 2));
 	return head === null ? shown : shown === '' ? head : `${head}\n\n${shown}`;
 }
 
@@ -155,6 +166,7 @@ export function normalise(text) {
 		.replace(/^retry-after: \d+$/gim, 'retry-after: <seconds>')
 		.replace(/\b[0-9A-Z]{5}(-[0-9A-Z]{5}){3}\b/g, '<setup-code>')
 		.replace(/\(commit [^,)]+, built \d{4}-\d\d-\d\d\)/g, '(commit <commit>, built <day>)')
+		.replace(/"commit":"[^"]*"/g, '"commit":"<commit>"')
 		.replace(/[ \t]+$/gm, '');
 	return all.trim();
 }
@@ -167,7 +179,7 @@ function runAll(steps) {
 	mkdirSync(workdir, { recursive: true });
 	// Aliases work as in an interactive shell (the CLI page defines one), so each block is sourced
 	// from its own file: a later line sees what an earlier one defined.
-	const lines = ['set -euo pipefail', 'shopt -s expand_aliases', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`];
+	const lines = ['set -euo pipefail', 'shopt -s expand_aliases', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`, `export SNIPPET_HOME=${JSON.stringify(workdir)}`];
 	steps.forEach((step, index) => {
 		const out = join(dir, `${index}.out`);
 		const marker = `echo "=== step ${index}: ${relative(ROOT, step.file)}" >&2`;
@@ -262,15 +274,16 @@ export function coverage() {
 	const pages = [];
 	for (const file of mdxFiles(DOCS)) {
 		const text = readFileSync(file, 'utf8');
-		const page = { file: relative(DOCS, file), run: 0, output: 0, notRun: 0, unmarked: [] };
+		const page = { file: relative(DOCS, file), run: 0, output: 0, notRun: 0, todo: 0, unmarked: [] };
 		for (const match of text.matchAll(FENCE)) {
 			const info = match[4];
 			if (meta(info, 'run')) page.run++;
 			else if (meta(info, 'output')) page.output++;
+			else if (meta(info, 'not-run')?.startsWith('todo:')) page.todo++;
 			else if (meta(info, 'not-run')) page.notRun++;
 			else page.unmarked.push(text.slice(0, match.index).split('\n').length);
 		}
-		if (page.run + page.output + page.notRun + page.unmarked.length > 0) pages.push(page);
+		if (page.run + page.output + page.notRun + page.todo + page.unmarked.length > 0) pages.push(page);
 	}
 	return pages;
 }
@@ -279,10 +292,10 @@ function printCoverage() {
 	const pages = coverage();
 	const sum = (key) => pages.reduce((total, page) => total + (Array.isArray(page[key]) ? page[key].length : page[key]), 0);
 	for (const page of pages) {
-		console.log(`${page.file.padEnd(36)} run ${String(page.run).padStart(3)}  output ${String(page.output).padStart(3)}  not-run ${String(page.notRun).padStart(3)}${page.unmarked.length ? `  UNMARKED at lines ${page.unmarked.join(', ')}` : ''}`);
+		console.log(`${page.file.padEnd(36)} run ${String(page.run).padStart(3)}  output ${String(page.output).padStart(3)}  not-run ${String(page.notRun).padStart(3)}  todo ${String(page.todo).padStart(3)}${page.unmarked.length ? `  UNMARKED at lines ${page.unmarked.join(', ')}` : ''}`);
 	}
-	const all = sum('run') + sum('output') + sum('notRun') + sum('unmarked');
-	console.log(`snippets coverage: ${all} blocks; ${sum('run')} run, ${sum('output')} outputs checked, ${sum('notRun')} not run (with a reason), ${sum('unmarked')} unmarked`);
+	const all = sum('run') + sum('output') + sum('notRun') + sum('todo') + sum('unmarked');
+	console.log(`snippets coverage: ${all} blocks; ${sum('run')} run, ${sum('output')} outputs checked, ${sum('notRun')} can't run here (with a reason), ${sum('todo')} could run but aren't wired yet (not-run="todo: …"), ${sum('unmarked')} unmarked`);
 	process.exit(sum('unmarked') > 0 ? 1 : 0);
 }
 

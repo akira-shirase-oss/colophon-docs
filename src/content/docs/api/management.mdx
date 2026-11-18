@@ -9,7 +9,7 @@ the right token can do too, except the few things kept for [people](/api/authent
 
 Content routes live under one prefix per environment:
 
-```text
+```text not-run="the routes' common prefix"
 /api/v1/projects/{project}/environments/{environment}/…
 ```
 
@@ -109,7 +109,7 @@ date: Wed, 18 Nov 2026 11:39:17 GMT
 
 Keep the entry's `id` and the `etag` header for the steps below:
 
-```sh
+```sh not-run="the reader copies these from the answer above; CI takes them from it"
 export ENTRY='…'          # data.id
 export ETAG='"…"'         # the etag header, quotes included
 ```
@@ -372,7 +372,7 @@ matches and the step is refused with `409 stale_changeset`, so nobody approves o
 didn't see. `POST …/refresh` re-pins the current revisions. `"unpublish": [ids]` in the body takes entries
 down instead.
 
-```sh
+```sh not-run="the reader copies these from the answer above; CI takes them from it"
 export REQUEST='…'        # data.id
 export HASH='"sha256:…"'  # the etag header
 ```
