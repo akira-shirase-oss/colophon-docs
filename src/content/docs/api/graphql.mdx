@@ -106,6 +106,8 @@ date: Wed, 18 Nov 2026 15:02:25 GMT
 
 </details>
 
+{/* snippet graphql: snippets/from-last.sh TART=.data.entries.nodes[0].id */}
+
 The answer is GraphQL's own `{"data": …, "errors": […]}`, not the `{"data": …}` wrapper the REST routes use.
 
 ## The schema
@@ -171,19 +173,24 @@ Then each content field is a field of its own, typed by its kind:
 A content field whose id is one of the node field names above (a field called `title`, say) keeps working
 under the name `field_title`, so neither hides the other.
 
-Here is the Lemon tart by id, with every node field and its content:
+Here is the Lemon tart by id, with every node field and its content. Its id is the first node's `id` in the
+first answer; set `TART` to it, and pass it as a variable rather than pasting it into the document (`jq -n
+--arg` builds the body, so no quoting goes wrong):
 
-```sh not-run="todo: names an entry by its id"
+```sh run=graphql
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query": "{ entry(id: \"01a1ee81-13ee-70ff-9989-321e046286f8\") { id title dish minutes method published { revisionId generation } createdAt updatedAt createdBy hiddenFields locale revisionId collection } }"}'
+  -d "$(jq -n --arg id "$TART" '{
+    query: "query Tart($id: ID!) { entry(id: $id) { id title dish minutes method published { revisionId generation } createdAt updatedAt createdBy hiddenFields locale revisionId collection } }",
+    variables: { id: $id }
+  }')"
 ```
 
 <details>
 <summary>Response: one draft</summary>
 
-```json not-run="todo: the answer to the command above"
+```json output=graphql
 {
   "data": {
     "entry": {
@@ -235,22 +242,23 @@ but next to `dish` it holds only `{"dish": …}`.
 
 `where` and `orderBy` can only name **filterable** fields: those marked `"index": true` in the content type,
 as the delivery API's [Filter and sort](/api/delivery/#filter-and-sort) explains. The arguments are built from
-those fields, so on a content type with none, `entries` has no `where` or `orderBy` at all. In the quick
-start's `recipes`, nothing is filterable yet:
+those fields, so on a content type with none, `entries` has no `where` or `orderBy` at all, and a field that
+isn't filterable is simply not in them. In the quick start's `recipes`, `minutes` is filterable (the `PUT
+…/content-types/recipes` on the [Delivery API](/api/delivery/#filter-and-sort) page made it so) and `dish` is
+not, so a filter on `dish` is a schema error:
 
-```sh not-run="todo: depends on minutes not being filterable yet"
+```sh run=graphql
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query": "{ entries(where: {minutes: {lte: 30}}) { nodes { dish } } }"}'
+  -d '{"query": "{ entries(where: {dish: {eq: \"Scones\"}}) { nodes { dish } } }"}'
 ```
 
-```json not-run="todo: the answer to the command above"
+```json output=graphql
 {"data":null,"errors":[{"message":"Unknown argument \"where\" on field \"entries\" of type \"Query\".","locations":[{"line":1,"column":11}]}]}
 ```
 
-Mark `minutes` filterable with the `PUT …/content-types/recipes` shown on the [Delivery
-API](/api/delivery/#filter-and-sort) page. The schema then gains these inputs:
+With `minutes` filterable, the schema has these inputs:
 
 ```graphql not-run="the schema's shape"
 input recipesFilter { minutes: recipesFilter_minutes }
@@ -266,10 +274,10 @@ text, numbers, dates, times and URL names; `contains` on single-line text. The q
 still apply: at most 8 filters, 4 sort keys and 100 values in an `in`. The entry id breaks ties in the sort,
 so paging is stable.
 
-With two more draft recipes saved (Ginger biscuits, 18 minutes; Flapjacks, 25), ask for those that take 30
-minutes or less, quickest first, one to a page. Variables work as in any GraphQL server:
+Ask for the recipes that take 30 minutes or less, quickest first, one to a page. Variables work as in any
+GraphQL server:
 
-```sh not-run="todo: depends on the entries at that point"
+```sh run=graphql
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
@@ -283,7 +291,7 @@ curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/col
 <details>
 <summary>Response: the first page, and a cursor for the next</summary>
 
-```json not-run="todo: the answer to the command above"
+```json output=graphql
 {
   "data": {
     "entries": {
@@ -329,23 +337,26 @@ curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/col
 
 </details>
 
+{/* snippet graphql: snippets/from-last.sh AFTER=.data.entries.pageInfo.endCursor */}
+
 `published` is `null`: Ginger biscuits is a draft that was never published, which the delivery API would never
 show. `applied.query` is the document `POST …/entries/query` takes; sending it there returns the same
 `query_hash`, `sha256:6f8c6c9d…`.
 
-**The next page.** Pass `endCursor` back as `after`, with the same `where`, `orderBy` and `first`:
+**The next page.** Pass `endCursor` back as `after`, with the same `where`, `orderBy` and `first`. With
+`AFTER` set to the `endCursor` above:
 
-```sh not-run="todo: depends on the entries at that point"
+```sh run=graphql
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "query Quick($most: Float, $after: String) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1, after: $after) { nodes { title minutes } pageInfo { endCursor hasNextPage } } }",
-    "variables": { "most": 30, "after": "djE6NmY4YzZjOWQzYzhkODI4ZGMxYWQ2NmY5MTkwNjcyYWQyYzJhM2M1NzY4MmVlMTUzYmY0MTAwNWQwZGM3NGRiNjpbMTgsIjAxYTFlZTg0LThkMWMtNzYwYS04MmE3LWYzOWNhODZhOWUxYiJd" }
-  }'
+  -d "$(jq -n --arg after "$AFTER" '{
+    query: "query Quick($most: Float, $after: String) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1, after: $after) { nodes { title minutes } pageInfo { endCursor hasNextPage } } }",
+    variables: { most: 30, after: $after }
+  }')"
 ```
 
-```json not-run="todo: the answer to the command above"
+```json output=graphql
 {"data":{"entries":{"nodes":[{"title":"Flapjacks","minutes":25.0}],"pageInfo":{"endCursor":null,"hasNextPage":false}}}}
 ```
 
@@ -398,9 +409,18 @@ as GraphQL errors.
 | `entries` and `entry` calls in one request, aliases counted | 8 | `too_many` (GraphQL error) |
 | Fields selected inside one `nodes` or `entry`, aliases counted | 128 | `too_many` (GraphQL error) |
 
-A full introspection query fits comfortably inside these. Here is a document that selects 600 fields:
+A full introspection query fits comfortably inside these. Here is a document that selects `title` 600
+times, built with a shell loop:
 
-```http not-run="todo: shown without its request"
+```sh run=graphql
+fields=$(for i in $(seq 600); do printf 'title '; done)
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg q "{ entries { nodes { $fields} } }" '{query: $q}')"
+```
+
+```http output=graphql
 HTTP/1.1 422 Unprocessable Entity
 content-type: application/json
 x-request-id: 01a1ee84-e7aa-720c-955b-3347a3081ae3
@@ -420,10 +440,17 @@ date: Wed, 18 Nov 2026 11:57:29 GMT
 }
 ```
 
-And one with nine aliased `entries` calls (`r0: entries(first: 1) { … } r1: …`). The first eight run; the
-ninth is refused:
+And one with nine aliased `entries` calls, `r0` to `r8`. The first eight run; the ninth is refused:
 
-```json not-run="todo: shown without its request"
+```sh run=graphql
+calls=$(for i in $(seq 0 8); do printf 'r%d: entries(first: 1) { nodes { id } } ' "$i"; done)
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg q "{ $calls}" '{query: $q}')"
+```
+
+```json output=graphql
 {
   "data": {
     "r0": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
@@ -487,9 +514,20 @@ date: Wed, 18 Nov 2026 11:58:01 GMT
 }
 ```
 
-`first` became the document's `limit`, so the pointer names `/limit`. A cursor from another query:
+`first` became the document's `limit`, so the pointer names `/limit`. The `endCursor` from the quick-recipes
+query, `AFTER`, sent with a query that has no filter:
 
-```json not-run="todo: shown without its request"
+```sh run=graphql
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg after "$AFTER" '{
+    query: "query All($after: String) { entries(first: 1, after: $after) { nodes { title } } }",
+    variables: { after: $after }
+  }')"
+```
+
+```json output=graphql
 {"data":null,"errors":[{"message":"this cursor is not valid for this query","locations":[{"line":1,"column":3}],"extensions":{"code":"foreign_cursor","pointer":""}}]}
 ```
 

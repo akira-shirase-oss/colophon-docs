@@ -153,7 +153,7 @@ export function normalise(text) {
 	const flatBody = json === null ? body.trim() : JSON.stringify(json);
 	const all = `${head ?? ''}\n\n${flatBody}`
 		.replace(/colophon_api_[A-Za-z0-9_-]{43}/g, '<api-token>')
-		.replace(/"next_cursor":"[^"]+"/g, '"next_cursor":"<cursor>"')
+		.replace(/"(next_cursor|endCursor)":"[^"]+"/g, '"$1":"<cursor>"')
 		.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<uuid>')
 		.replace(/\b[0-9a-f]{32}\b/g, '<hex32>')
 		.replace(/sha256:[0-9a-f]{64}/g, 'sha256:<hash>')

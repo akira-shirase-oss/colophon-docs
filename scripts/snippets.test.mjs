@@ -26,3 +26,9 @@ test('the page may show JSON indented; the comparison is by value and key order'
 	assert.match(display(compact), /\n {2}"data": \{\n/);
 	assert.notEqual(normalise(compact), normalise(compact.replace('{"a":1,"b":[1,2]}', '{"b":[1,2],"a":1}')));
 });
+
+test('a paging cursor (REST next_cursor, GraphQL endCursor) does not count; a missing one does', () => {
+	const page = (cursor) => answer('01a1ee61-d403-73ff-9f17-bfd7ba3edc0f', 'Wed, 18 Nov 2026 11:19:11 GMT', `{"next_cursor":${cursor},"data":{"pageInfo":{"endCursor":${cursor}}}}`);
+	assert.equal(normalise(page('"djE6YWFh"')), normalise(page('"djE6YmJi"')));
+	assert.notEqual(normalise(page('"djE6YWFh"')), normalise(page('null')));
+});
