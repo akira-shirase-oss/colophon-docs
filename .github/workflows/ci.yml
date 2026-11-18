@@ -14,7 +14,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'docs/**'] # docs/** so a branch is checked before review
   pull_request:
   schedule:
     - cron: '17 4 * * *' # nightly: catch colophon-cms main moving under the docs
