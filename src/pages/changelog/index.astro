@@ -48,6 +48,19 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 		<a href="/changelog/rss.xml">Subscribe with RSS</a>.
 	</p>
 
+	{/* The cards' icons, once: each card refers to them, so 89 entries don't repeat them. */}
+	<svg class="change-sprite" aria-hidden="true" width="0" height="0">
+		{Object.entries(ICONS).map(([type, path]) => (
+			<symbol id={`change-icon-${type.toLowerCase()}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d={path} />
+			</symbol>
+		))}
+		<symbol id="change-icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+			<circle cx="12" cy="12" r="3" />
+		</symbol>
+	</svg>
+
 	<div class="filters not-content" id="changelog-filters" hidden>
 		<div role="group" aria-label="Filter by type">
 			<button type="button" class="filter" data-filter="all" aria-pressed="true">All <span>{entries.length}</span></button>
@@ -82,9 +95,7 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 							<h3 class="change-head">
 								<button type="button" class="change-toggle" aria-expanded="true" aria-controls={`${id}-body`}>
 									<span class="change-icon" aria-hidden="true">
-										<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<path d={ICONS[type]} />
-										</svg>
+										<svg width="20" height="20"><use href={`#change-icon-${type.toLowerCase()}`} /></svg>
 									</span>
 									<span class="change-main">
 										<span class="change-title">{entry.data.title}</span>
@@ -98,10 +109,7 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 										</span>
 									</span>
 									<span class="change-eye" aria-hidden="true">
-										<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-											<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
-											<circle cx="12" cy="12" r="3" />
-										</svg>
+										<svg width="20" height="20"><use href="#change-icon-eye" /></svg>
 									</span>
 								</button>
 							</h3>
@@ -197,7 +205,7 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 	}
 </script>
 
-<style>
+<style is:global>
 	.lede {
 		color: var(--sl-color-gray-2);
 	}
@@ -286,6 +294,12 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 	.change:target {
 		background: linear-gradient(180deg, var(--card-sheen), transparent 70%), var(--card-bg-open);
 		border-color: var(--card-border-open);
+	}
+	.change-sprite {
+		position: absolute;
+		width: 0;
+		height: 0;
+		overflow: hidden;
 	}
 	.change-icon,
 	.change-eye {
