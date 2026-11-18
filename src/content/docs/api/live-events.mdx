@@ -83,13 +83,19 @@ A reader for Node.js 18 or later, with only `fetch`. (`EventSource` isn't built 
 refusal's status or `Retry-After`.) It keeps the newest release number it has seen and tells its listeners
 only when that number goes up:
 
-```ts not-run="todo: code that keeps a stream open"
+```ts title="site-events.ts" run=ops file=site-events.ts
 const CMS = 'http://localhost:8080';
 const PROJECT = process.env.PROJECT!;
 const delivery = `${CMS}/content/v1/${PROJECT}/production`;
 
 let generation = 0;
 const listeners = new Set<(generation: number) => void>();
+
+/** Calls `listener` with each new release number; returns a function that stops it. */
+export function onRelease(listener: (generation: number) => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 /** Reads the newest release number; tells listeners only when it moved forward. */
 async function refresh(): Promise<void> {
@@ -140,7 +146,32 @@ export async function run(): Promise<void> {
 ```
 
 Each open page of your site subscribes to your server (through an event stream of your own, or any push
-channel you already have) by adding a listener, and reloads or re-renders when the release number moves.
+channel you already have) through `onRelease`, and reloads or re-renders when the release number moves. To
+watch it work, run it for six seconds while a recipe is published in the Studio (Node.js 22.18 or later runs
+TypeScript files as they are):
+
+```ts title="watch.ts" run=ops file=watch.ts
+import { onRelease, run } from './site-events.ts';
+
+onRelease((generation) => console.log('new release:', generation));
+void run();
+setTimeout(() => process.exit(0), 6_000); // only for this example
+```
+
+```sh run=ops
+node watch.ts > watch.txt &
+sleep 1
+```
+
+{/* snippet ops: snippets/publish-entry.sh Bannock */}
+
+```sh run=ops
+wait; cat watch.txt
+```
+
+```text output=ops
+(filled in by the runner)
+```
 
 ### In a browser, on the same origin
 
@@ -279,13 +310,13 @@ change is always reported. Count nothing: on each frame, read again what that ki
 with `fetch`, as in the [public example](#listen-from-your-sites-server), adding the header and handling the
 three event names:
 
-```ts not-run="todo: code that keeps a stream open"
+```ts title="signed-in-events.ts" run=ops file=signed-in-events.ts
 const url = `http://localhost:8080/api/v1/projects/${process.env.PROJECT}/environments/production/events`;
 
 type Hint = { k: string; c?: string; e?: string };
 
 /** Reads one stream until it ends; calls `onHint` for each change, `onReload` for hello and resync. */
-async function listen(onHint: (hint: Hint) => void, onReload: () => void): Promise<void> {
+export async function listen(onHint: (hint: Hint) => void, onReload: () => void): Promise<void> {
   const response = await fetch(url, {
     headers: {
       authorization: `Bearer ${process.env.COLOPHON_TOKEN}`,
@@ -322,7 +353,27 @@ async function listen(onHint: (hint: Hint) => void, onReload: () => void): Promi
 ```
 
 Run it in a loop that opens the stream again whenever `listen` returns or throws, as the public example's
-`run` does. Keep the token on the server: see [Keep tokens on a server](/api/authentication/#keep-tokens-on-a-server).
+`run` does. Here it runs once, for six seconds, while a draft is saved:
+
+```ts title="hints.ts" run=ops file=hints.ts
+import { listen } from './signed-in-events.ts';
+
+void listen((hint) => console.log('change:', JSON.stringify(hint)), () => console.log('read everything again'));
+setTimeout(() => process.exit(0), 6_000); // only for this example
+```
+
+```sh run=ops
+node hints.ts > hints.txt &
+sleep 1
+curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" -d '{"dish": "Fat rascals", "minutes": 25}'
+wait; cat hints.txt; rm -f hints.txt watch.txt
+```
+
+```text output=ops
+(filled in by the runner)
+``` Keep the token on the server: see [Keep tokens on a server](/api/authentication/#keep-tokens-on-a-server).
 
 ### Signed-in stream limits
 
