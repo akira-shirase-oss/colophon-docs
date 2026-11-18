@@ -1,0 +1,468 @@
+---
+title: Quick start
+description: Install Colophon with Docker, publish your first entry, then read it from the delivery API and write to the management API with an API token, using curl and the TypeScript SDK.
+---
+
+import { Steps, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+This guide takes you from nothing to a published entry and two working API calls. You will:
+
+1. install Colophon on your machine with Docker and become its administrator;
+2. create a project and a content type, write an entry, publish it, and read its receipt;
+3. make an API token in the Studio, then call the **delivery API** and the **management API** with
+   `curl` and with the TypeScript SDK, seeing every request, header and response.
+
+Every command and response on this page is run against a fresh Colophon by this site's CI, so
+what you see is what the current `main` branch answers.
+
+:::note[What you need]
+- **Docker** with Compose 2.24 or newer, and `git`. Nothing else for Parts A and B: no Rust, no Node, no
+  database.
+- **Node.js 22.17 or newer**, only for the SDK step in Part C.
+- About 1.5 GB of disk for the images, 1 GB of memory, and port **8080** free on `127.0.0.1`.
+:::
+
+## Part A: Install Colophon and sign in
+
+<Steps>
+
+1. **Build and start Colophon.** Colophon isn't published as a container image yet, so you build
+   it from a clone. Docker compiles everything; the build takes about ten minutes on a laptop, and
+   starting takes under a minute after that.
+
+   ```sh run=quickstart step=install
+   git clone https://github.com/akira-shirase-oss/colophon-cms.git
+   cd colophon-cms
+   docker build -f deploy/image/Dockerfile \
+     --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+     -t colophon:local .
+   cd deploy/quickstart
+   echo "COLOPHON_IMAGE=colophon:local" >.env
+   docker compose up -d --wait
+   ```
+
+   `up --wait` returns once Colophon is ready. On the first start it generates every secret, creates
+   the database roles, applies the schema and creates the storage bucket. PostgreSQL, Valkey (the
+   cache) and Garage (storage for uploads) run beside Colophon, but only Colophon's port is
+   published, and only on `127.0.0.1`.
+
+   :::caution[Pass `SOURCE_DATE_EPOCH`]
+   The image's build stamps its date from `SOURCE_DATE_EPOCH`. Without the `--build-arg`, the
+   variable is set but empty and the build stops while compiling the memory allocator.
+   :::
+
+   Every later command in this guide runs in this folder, `colophon-cms/deploy/quickstart`.
+
+2. **Open the Studio** at `http://localhost:8080/studio/` in your browser. Use
+   `localhost`, not `127.0.0.1`: sign-in trusts the address Colophon was told it lives at.
+
+   The Studio sees that nobody runs this Colophon yet and asks for the first account.
+
+   ![The Studio's first screen: Welcome to Colophon, with Your name, Email and Password fields and a Create account and continue button](/screens/quick-start/welcome.webp)
+
+3. **Create the first account.** Fill in **Your name**, **Email** and a **Password** of at least 8
+   characters, then press **Create account and continue**.
+
+4. **Become the administrator.** When the server started, it printed a one-time setup code to its
+   log. Read it:
+
+   ```sh run=quickstart
+   docker compose logs colophon | grep "Setup code"
+   ```
+
+   ```text output=quickstart
+   colophon-1  |     Setup code: Y9DRC-35N2Y-3V608-0R846
+   ```
+
+   Enter it under **Setup code** and press **Become the administrator**. The code works once, for an
+   hour after the server started; `docker compose restart colophon` prints a new one while nobody is
+   an administrator.
+
+   ![Finish setting up Colophon: the Setup code field and the Become the administrator button](/screens/quick-start/setup-code.webp)
+
+</Steps>
+
+## Part B: Create content and publish it
+
+<Steps>
+
+1. **Create a project.** A project is one website's content: its entries, the people who write
+   them, and its releases. Under **Create your first project**, type the **Name** `Field notes`. The
+   **URL name** fills itself in as `field-notes`. Keep **A small blog** selected and press
+   **Create project**.
+
+   ![Create your first project, with the Name Field notes, the URL name field-notes and the Start with choices](/screens/quick-start/new-project.webp)
+
+   The project opens on its **Overview**, with a **Get started** list. Each project starts with one
+   environment, `production`, which the API addresses use.
+
+2. **Create a content type.** A content type is a kind of content and its fields. The small blog
+   gave you **Articles**; make one of your own. In the sidebar, open **Content types** and press
+   **New content type**.
+
+   - **Name:** `Recipes`. The **Address name** becomes `recipes`; that is the name the API uses, and
+     it can't change later.
+   - **What is each one called?** `Dish`.
+   - **It holds:** keep **Many entries**.
+
+   Press **Create**. Then add two fields with **Add a field**:
+
+   - **Number**, labelled `Minutes`, with **Whole numbers only** ticked;
+   - **Rich text**, labelled `Method`.
+
+   Press **Save**. Each field's **Code name** (`dish`, `minutes`, `method`) is the key it has in the API.
+
+   ![The Recipes content type with three fields: Dish (text, shown in lists), Minutes (number) and Method (rich text)](/screens/quick-start/content-type.webp)
+
+3. **Write an entry.** Open **Recipes** in the sidebar, press **New entry**, type the **Dish**
+   `Lemon tart` and press **Create**. In the editor, set **Minutes** to `45` and write the
+   **Method**: *Blind-bake the pastry, then fill it with lemon curd and bake until just set.*
+
+   There is no save button. The panel on the right says **Saved** after each change, and the entry
+   is a **Draft**: readers can't see it.
+
+   ![The entry editor for Lemon tart: the Dish, Minutes and Method fields, and the side panel saying Draft and Saved just now](/screens/quick-start/entry.webp)
+
+4. **Publish it.** Press **Publish**. As the project's owner you may approve your own changes, so
+   one press makes a publish request, approves it and publishes it. The panel now says **Live** and
+   names **Release 1**.
+
+   ![The same entry after publishing: Live, Readers see this version, in Release 1](/screens/quick-start/published.webp)
+
+   :::note[Publish requests]
+   A role that can't approve its own work sees **Send for review** instead: the request waits under
+   **Publish requests** until a reviewer approves it. An approval counts only for the exact versions
+   it saw. See [Core concepts](/concepts/).
+   :::
+
+5. **Read the receipt.** Press **Release 1**. A release is a numbered record of what went live, and
+   its receipt says who published it, what changed and what each website connection reported. You
+   haven't connected a website yet, so it says what to add.
+
+   ![Release 1's receipt: Published by Akira Shirase, 1 entry changed, Published in Colophon, and empty Website connections and site checks](/screens/quick-start/receipt.webp)
+
+</Steps>
+
+## Part C: Call the APIs with a token
+
+Colophon has two HTTP APIs, and they treat credentials differently:
+
+| API | Path | Credential |
+|---|---|---|
+| **Delivery** | `/content/v1/{project}/{environment}/…` | **None.** Anyone can read what is published. |
+| **Management** | `/api/v1/projects/{project}/…` | **Required.** An API token, or a person's sign-in. |
+
+An API token is for a script, a site build or another tool: it acts on one project's content with
+the powers you give it, and it ends on a date you choose.
+
+<Steps>
+
+1. **Make an API token.** Open **Settings** in the sidebar, then **API tokens**, and press
+   **New token**.
+
+   - **Name:** `Recipe site`, so you know later what uses it.
+   - **What it may do:** **Full access** (it may read, write and publish content). A site that only
+     reads drafts needs **Read only**; **Custom** picks exact powers per content type.
+   - **Works for:** keep **90 days**.
+
+   Press **Make the token**.
+
+   ![The New token dialog: Name, Description, What it may do with Read only, Full access and Custom, and Works for](/screens/quick-start/token-form.webp)
+
+   The token is shown **once**. Press **Copy**, keep it somewhere safe, then press **I've stored it**.
+   Colophon keeps only a fingerprint of it, so a lost token can't be shown again: revoke it and make
+   another.
+
+   ![Copy “Recipe site” now: the token, starting colophon_api_, with a Copy button](/screens/quick-start/token-secret.webp)
+
+2. **Copy the project id.** The APIs address a project by its id. Open **Settings** → **General**,
+   expand **Technical details**, and copy the **Project id**.
+
+   ![Settings, General: Technical details open, showing the Project id and the Public API address](/screens/quick-start/project-id.webp)
+
+3. **Put both in your shell.** Use the values you copied:
+
+   ```sh
+   export PROJECT='01a1ee5f-4b65-74f3-a0b8-0bd2bc61446d'          # your Project id
+   export COLOPHON_TOKEN='colophon_api_…'                          # your token
+   ```
+
+   {/* snippet quickstart: snippets/studio-steps.sh */}
+
+4. **Read published content: the delivery API, no token.** This is what your website calls.
+
+   ```sh run=quickstart
+   curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes"
+   ```
+
+   <details>
+   <summary>Response: <code>200 OK</code> with the published Lemon tart</summary>
+
+   ```http output=quickstart
+   HTTP/1.1 200 OK
+   content-type: application/json
+   colophon-generation: 1
+   cache-control: public, max-age=0, must-revalidate, s-maxage=30
+   etag: "c907d1951d8934ba38499ad57c89a212"
+   colophon-cache: miss
+   cache-tag: colophon:p:01a1ee742617729691a0d6476f0f925b,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:c:recipes
+   x-request-id: 01a1ee74-2808-70c1-a4d7-5097aadfc018
+   content-length: 566
+   date: Wed, 18 Nov 2026 11:39:12 GMT
+
+   {
+     "data": [
+       {
+         "id": "01a1ee74-26a8-72f3-815d-06c35ae7782c",
+         "revision_id": "01a1ee74-2701-7272-9541-b172eb0b1727",
+         "collection": "recipes",
+         "title": "Lemon tart",
+         "content": {
+           "dish": "Lemon tart",
+           "minutes": 45,
+           "method": {
+             "schema": "colophon/rich-text",
+             "version": 1,
+             "doc": {
+               "type": "doc",
+               "content": [
+                 {
+                   "type": "paragraph",
+                   "content": [
+                     {
+                       "type": "text",
+                       "text": "Blind-bake the pastry, then fill it with lemon curd and bake until just set."
+                     }
+                   ]
+                 }
+               ]
+             }
+           }
+         },
+         "content_hash": "sha256:075313827411195cd4c97eea85eb43a5f66170ece029ed5e3afb8dd517265702",
+         "published_in": 1,
+         "visibility": "public"
+       }
+     ],
+     "next_cursor": null
+   }
+   ```
+
+   </details>
+
+   What the headers tell you:
+
+   - `colophon-generation: 1`: the answer comes from release 1. Add `?generation=1` to pin a read to a
+     release, so a page built from several reads never mixes two releases.
+   - `etag` and `cache-control`: send the ETag back as `If-None-Match` and an unchanged answer is
+     `304 Not Modified`. Shared caches may keep it for 30 seconds (`s-maxage=30`).
+   - `colophon-cache`: whether Colophon's own cache answered (`hit`) or the database did (`miss`).
+   - `cache-tag`: the tags a CDN purge uses after the next publish.
+   - `x-request-id`: quote it when you report a problem; error bodies carry the same id.
+
+5. **Read drafts: the management API, with the token.** The token goes in the `Authorization`
+   header, as a bearer token. The management API answers with drafts, whether published or not.
+
+   ```sh run=quickstart
+   curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+     -H "Authorization: Bearer $COLOPHON_TOKEN"
+   ```
+
+   <details>
+   <summary>Response: <code>200 OK</code> with the draft and where it is published</summary>
+
+   ```http output=quickstart
+   HTTP/1.1 200 OK
+   content-type: application/json
+   x-request-id: 01a1ee74-281d-77a9-bc74-26260a406ff7
+   content-length: 629
+   date: Wed, 18 Nov 2026 11:39:12 GMT
+
+   {
+     "data": [
+       {
+         "id": "01a1ee74-26a8-72f3-815d-06c35ae7782c",
+         "created_by": "01a1ee74-2549-74be-9e59-754b0adafad3",
+         "updated_at": "2026-11-18T11:39:11.997793Z",
+         "revision": {
+           "id": "01a1ee74-2701-7272-9541-b172eb0b1727",
+           "base_revision_id": "01a1ee74-26a8-72f3-815d-06c275ac92ed",
+           "author_id": "01a1ee74-2549-74be-9e59-754b0adafad3",
+           "created_at": "2026-11-18T11:39:11.997793Z",
+           "content_hash": "sha256:075313827411195cd4c97eea85eb43a5f66170ece029ed5e3afb8dd517265702",
+           "title": "Lemon tart",
+           "visibility": "public"
+         },
+         "published": {
+           "revision_id": "01a1ee74-2701-7272-9541-b172eb0b1727",
+           "generation": 1
+         },
+         "locale": null,
+         "visibility": "public"
+       }
+     ],
+     "next_cursor": null
+   }
+   ```
+
+   </details>
+
+   `published` says which revision readers get, and in which release. Without the header the same
+   request is `401 unauthorized`; [Authentication & API tokens](/api/authentication/) lists every
+   refusal.
+
+6. **Write a draft with the token.** A write that creates something needs an `Idempotency-Key`: if
+   the answer is lost and you send the same request again with the same key, Colophon returns the
+   first result instead of creating a second entry. Use any 16 to 128 letters, digits, `-` and `_`.
+
+   ```sh run=quickstart
+   curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+     -H "Authorization: Bearer $COLOPHON_TOKEN" \
+     -H "Content-Type: application/json" \
+     -H "Idempotency-Key: create-shortbread-0001" \
+     -d '{"dish": "Shortbread", "minutes": 30}'
+   ```
+
+   <details>
+   <summary>Response: <code>201 Created</code> with the new draft</summary>
+
+   ```http output=quickstart
+   HTTP/1.1 201 Created
+   content-type: application/json
+   etag: "01a1ee74-2846-7434-a943-0a09f1aefee3"
+   x-request-id: 01a1ee74-2842-72f5-82f5-9324000e1afc
+   content-length: 622
+   date: Wed, 18 Nov 2026 11:39:12 GMT
+
+   {
+     "data": {
+       "id": "01a1ee74-2846-7434-a943-0a0a64d6ba97",
+       "collection": "recipes",
+       "created_at": "2026-11-18T11:39:12.323454Z",
+       "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+       "updated_at": "2026-11-18T11:39:12.323454Z",
+       "revision": {
+         "id": "01a1ee74-2846-7434-a943-0a09f1aefee3",
+         "base_revision_id": null,
+         "author_id": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+         "created_at": "2026-11-18T11:39:12.323454Z",
+         "content_hash": "sha256:e4d0ff92f328ce802e3c6ceef86911aec32043adc8fef45722afaeb34aa02719",
+         "title": "Shortbread",
+         "visibility": "public"
+       },
+       "content": {
+         "dish": "Shortbread",
+         "minutes": 30
+       },
+       "locale": null,
+       "localizations": [],
+       "visibility": "public"
+     }
+   }
+   ```
+
+   </details>
+
+   The body is the entry's content, keyed by each field's code name, and Colophon checks it against
+   the content type: `"minutes": "thirty"` is refused with `422` and a pointer to `/minutes`. The
+   `etag` is the new revision; a later save sends it back as `If-Match`, so it can never overwrite a
+   change it didn't see.
+
+7. **Check what readers get.** The new entry is a draft, so the delivery API still answers with the
+   Lemon tart alone:
+
+   ```sh run=quickstart
+   curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes" | grep -o '"title":"[^"]*"'
+   ```
+
+   ```text output=quickstart
+   "title":"Lemon tart"
+   ```
+
+   To publish it from a script, open a publish request, send it for review and publish it once a
+   person has approved it: [Management API](/api/management/#publish-through-the-api).
+
+8. **Do the same with the TypeScript SDK.** `@colophon-cms/sdk` isn't on npm yet, so build its
+   package from your clone. From `colophon-cms/deploy/quickstart`:
+
+   ```sh run=quickstart
+   cd ../..
+   npm ci --workspace @colophon-cms/sdk --include-workspace-root=false --no-audit --no-fund >/dev/null
+   npm pack --workspace @colophon-cms/sdk --silent
+   ```
+
+   ```text output=quickstart
+   colophon-cms-sdk-0.1.0-alpha.1.tgz
+   ```
+
+   Make a small project beside the clone and install the package into it:
+
+   ```sh run=quickstart
+   mkdir ../recipe-script && cd ../recipe-script
+   npm init -y >/dev/null
+   npm install --no-audit --no-fund ../colophon-cms/colophon-cms-sdk-0.1.0-alpha.1.tgz >/dev/null
+   ```
+
+   Save this as `quick-start.mjs`:
+
+   ```js title="quick-start.mjs" run=quickstart file=quick-start.mjs
+   import { Client, newIdempotencyKey } from '@colophon-cms/sdk';
+
+   const baseUrl = 'http://localhost:8080';
+   const project = process.env.PROJECT;
+
+   // Published content: the delivery API needs no credential.
+   const site = new Client({ baseUrl }).delivery(project); // the production environment
+   const published = await site.list('recipes');
+   console.log('published:', published.data.map((entry) => entry.title));
+
+   // Drafts and writes: the management API, with the token.
+   const cms = new Client({ baseUrl, token: process.env.COLOPHON_TOKEN }).environment(project);
+   const drafts = await cms.listEntries('recipes');
+   console.log('drafts:', drafts.data.map((entry) => entry.revision.title));
+
+   const created = await cms.createEntry(
+     'recipes',
+     { dish: 'Scones', minutes: 25 },
+     { idempotencyKey: newIdempotencyKey() }, // keep the key if you retry this write
+   );
+   console.log('created:', created.data.revision.title, created.response.status);
+   ```
+
+   Run it with the same two variables in your environment:
+
+   ```sh run=quickstart
+   node quick-start.mjs
+   ```
+
+   ```text output=quickstart
+   published: [ 'Lemon tart' ]
+   drafts: [ 'Shortbread', 'Lemon tart' ]
+   created: Scones 201
+   ```
+
+   The SDK sends the same requests you sent with `curl`. A refusal throws an `ApiError` with the
+   status, the error `code`, `details.reason` and the request id.
+
+</Steps>
+
+:::danger[Keep the token on a server]
+An API token is a password for your project's content. Use it from servers, build steps and
+scripts, and keep it in their environment or a secret store. Never put it in a browser bundle, a
+mobile app or a public repository. Websites read published content from the delivery API, which
+needs no token at all.
+:::
+
+## What's next
+
+<CardGrid>
+	<LinkCard title="Authentication & API tokens" href="/api/authentication/" description="Kinds and scopes, expiry, revoking, limits, and every error a token can get." />
+	<LinkCard title="Delivery API" href="/api/delivery/" description="Lists and entries, queries, paging, pinned releases, caching and taken-down content." />
+	<LinkCard title="Management API" href="/api/management/" description="Idempotency keys, If-Match, saving drafts and publishing through the API." />
+	<LinkCard title="Core concepts" href="/concepts/" description="Projects, environments, publish requests, releases and receipts, in one page." />
+	<LinkCard title="API reference" href="/api/reference/" description="Every route, generated from Colophon's OpenAPI document." />
+	<LinkCard title="Installation" href="/installation/" description="Serving Colophon on a domain, production with systemd and Caddy, and upgrades." />
+</CardGrid>
+
+To stop Colophon, run `docker compose down` in `colophon-cms/deploy/quickstart`; your content stays in
+Docker volumes until you add `--volumes`.

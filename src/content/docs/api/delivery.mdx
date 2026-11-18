@@ -1,0 +1,418 @@
+---
+title: Delivery API
+description: Read published content from /content/v1 with no credential, page with cursors, filter and sort with the query document, pin a release, cache with ETags, and what readers get for content that was taken down.
+---
+
+The delivery API is what your website or app reads. It answers with **published content only**, from the
+release you ask for or the latest one, and it needs **no credential**. A draft can't appear in it: delivery
+reads through a database role that has no access to drafts.
+
+```text
+GET  /content/v1/{project}/{environment}/{collection}             a page of published entries
+GET  /content/v1/{project}/{environment}/{collection}/{entry}     one published entry
+POST /content/v1/{project}/{environment}/{collection}/query       filter, sort and select
+GET  /content/v1/{project}/{environment}/events                   a live stream: published content changed
+```
+
+`{project}` is the project's id (a UUID: **Settings** → **General** → **Technical details**), `{environment}`
+is `production` unless you made others, and `{collection}` is a content type's address name. The examples
+continue from the [Management API](/api/management/) page: release 1 published the Lemon tart, release 2 the
+Ginger biscuits (`$ENTRY`).
+
+## List a collection
+
+```sh run=delivery
+curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?limit=1"
+```
+
+<details>
+<summary>Response: the first page, one entry, and a cursor for the next</summary>
+
+```json output=delivery
+{
+  "data": [
+    {
+      "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+      "revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+      "collection": "recipes",
+      "title": "Ginger biscuits",
+      "content": {
+        "dish": "Ginger biscuits",
+        "minutes": 18
+      },
+      "content_hash": "sha256:c5bf245116480f76059c722c21eb69982cb2e27fc79c70503f42c99ccd44092b",
+      "published_in": 2,
+      "visibility": "public"
+    }
+  ],
+  "next_cursor": "ZDE6MDFhMWVlNzQtMjYxNy03Mjk2LTkxYTAtZDY0NzZmMGY5MjViOnByb2R1Y3Rpb246cmVjaXBlczoyOjAxYTFlZTc0LTNkODMtNzA0NS1iNDViLTcxZjYxY2NkOTM1Mg"
+}
+```
+
+</details>
+
+Each row is one published entry:
+
+| Field | What it is |
+|---|---|
+| `id` | The entry's id; it never changes |
+| `revision_id` | The revision readers get: the one its release published |
+| `collection`, `title` | The content type, and the field that names the entry |
+| `slug` | The entry's URL name, when its content type has one |
+| `content` | The fields, keyed by code name. Rich text is a `colophon/rich-text` JSON document |
+| `content_hash` | A SHA-256 of `content`, to tell whether it changed |
+| `published_in` | The release this revision went live in |
+| `visibility` | `public`, `authenticated` or `role:<name>`: who may read it |
+| `media` | The uploads it uses, with addresses, sizes and renditions ([below](#images)); absent when it uses none |
+
+**Paging.** `limit` is 1 to 100, 20 by default. Pass `next_cursor` back as `cursor` for the next page; it is
+`null` on the last one. A cursor keeps the release of its first page, so a walk through a collection never
+mixes two releases even if someone publishes halfway through:
+
+{/* snippet delivery: snippets/from-last.sh CURSOR=.next_cursor */}
+
+```sh run=delivery
+curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?limit=1&cursor=$CURSOR"
+```
+
+<details>
+<summary>Response: the second and last page</summary>
+
+```json output=delivery
+{
+  "data": [
+    {
+      "id": "01a1ee74-26a8-72f3-815d-06c35ae7782c",
+      "revision_id": "01a1ee74-2701-7272-9541-b172eb0b1727",
+      "collection": "recipes",
+      "title": "Lemon tart",
+      "content": {
+        "dish": "Lemon tart",
+        "minutes": 45,
+        "method": {
+          "schema": "colophon/rich-text",
+          "version": 1,
+          "doc": {
+            "type": "doc",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Blind-bake the pastry, then fill it with lemon curd and bake until just set."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "content_hash": "sha256:075313827411195cd4c97eea85eb43a5f66170ece029ed5e3afb8dd517265702",
+      "published_in": 1,
+      "visibility": "public"
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+</details>
+
+A collection with nothing published, or a name no content type has, answers an empty page rather than an error.
+A project id that doesn't exist is `404`.
+
+## Read one entry
+
+```sh run=delivery
+curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY"
+```
+
+<details>
+<summary>Response: <code>200 OK</code>, the Ginger biscuits as release 2 published them</summary>
+
+```http output=delivery
+HTTP/1.1 200 OK
+content-type: application/json
+colophon-generation: 2
+cache-control: public, max-age=0, must-revalidate, s-maxage=30
+etag: "ed765573e662a881ce1b8b38e81b0ce1"
+colophon-cache: miss
+cache-tag: colophon:p:01a1ee742617729691a0d6476f0f925b,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:c:recipes,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:n:01a1ee743d837045b45b71f61ccd9352
+x-request-id: 01a1ee74-3ee7-739e-8ffa-c7057e754ca5
+content-length: 334
+date: Wed, 18 Nov 2026 11:39:18 GMT
+
+{
+  "data": {
+    "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+    "revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+    "collection": "recipes",
+    "title": "Ginger biscuits",
+    "content": {
+      "dish": "Ginger biscuits",
+      "minutes": 18
+    },
+    "content_hash": "sha256:c5bf245116480f76059c722c21eb69982cb2e27fc79c70503f42c99ccd44092b",
+    "published_in": 2,
+    "visibility": "public"
+  }
+}
+```
+
+</details>
+
+{/* snippet delivery: snippets/from-last.sh DELIVERY_ETAG=header:etag */}
+
+```sh
+export DELIVERY_ETAG='"…"'   # the etag header, quotes included
+```
+
+An entry that was never published, or doesn't exist, is `404 not_found`; one you may not see looks the same.
+The SDK reads it with `client.delivery(project).get('recipes', id)`.
+
+## Pin a release
+
+Every answer names its release in `colophon-generation`. Add `?generation=` to read exactly that release, as
+it was published: a page assembled from several reads stays consistent, and you can look at the site as it was
+at any release. Release 1 had only the Lemon tart:
+
+```sh run=delivery
+curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?generation=1" | grep -o '"title":"[^"]*"'
+```
+
+```text output=delivery
+"title":"Lemon tart"
+```
+
+A release that hasn't happened is refused with `422 invalid_generation`. Taken-down content stays refused at
+every release, [see below](#taken-down-content).
+
+## Caching and ETags
+
+Delivery answers are built for caches:
+
+| Header | Meaning |
+|---|---|
+| `etag` | A strong validator for this exact answer. Send it as `If-None-Match` and an unchanged answer is `304 Not Modified`, with no body |
+| `cache-control` | Latest reads: `public, max-age=0, must-revalidate, s-maxage=30`: browsers revalidate every time, shared caches keep it 30 s. Pinned reads (`?generation=`): `s-maxage=300`, since a release never changes |
+| `colophon-cache` | Whether Colophon's own cache answered (`hit`), the database did (`miss`), another request's database read was shared (`coalesced`), or the cache was skipped (`bypass`) |
+| `cache-tag` | Tags for the project, environment, collection and entry, so a CDN can purge exactly what a release changed |
+| `colophon-generation` | The release the answer comes from |
+
+Revalidate with the `etag` of the entry you read above:
+
+```sh run=delivery
+curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY" \
+  -H "If-None-Match: $DELIVERY_ETAG"
+```
+
+```http output=delivery
+HTTP/1.1 304 Not Modified
+colophon-generation: 2
+cache-control: public, max-age=0, must-revalidate, s-maxage=30
+etag: "ed765573e662a881ce1b8b38e81b0ce1"
+colophon-cache: hit
+cache-tag: colophon:p:01a1ee742617729691a0d6476f0f925b,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:c:recipes,colophon:p:01a1ee742617729691a0d6476f0f925b:e:01a1ee742619766385ef304a7b48ee66:n:01a1ee743d837045b45b71f61ccd9352
+x-request-id: 01a1ee74-3f17-7155-9df4-c25633c288a4
+date: Wed, 18 Nov 2026 11:39:18 GMT
+```
+
+Colophon's cache is keyed by release, so a publish never serves a stale answer from it: the next read after a
+release is a miss for the new release. A CDN in front keeps answers for at most `s-maxage`, unless a [website
+connection](/api/website-connections/) purges it by tag on each release. Losing the cache never loses content:
+reads fall back to the database.
+
+## Filter and sort
+
+`POST …/{collection}/query` takes one JSON document instead of a URL full of parameters:
+
+```json
+{
+  "filters": [{ "field": "minutes", "op": "lte", "value": 30 }],
+  "sort": [{ "field": "minutes", "dir": "asc" }],
+  "fields": ["dish", "minutes"],
+  "limit": 20,
+  "depth": 0
+}
+```
+
+- **`filters`**: up to 8, all of which must match. Operators: `eq` and `in` on every filterable field;
+  `lt`, `lte`, `gt`, `gte` on text, numbers, dates, times and URL names; `contains` on single-line text.
+  `in` takes 1 to 100 distinct values.
+- **`sort`**: up to 4 keys, each `asc` or `desc`. The entry id breaks ties, so paging is stable.
+- **`fields`**: return only these fields of `content`. It can only narrow.
+- **`depth`**: 0 to 2. Replace each top-level single link to another entry with that entry, as published in
+  the same release.
+- **`limit`** and the `cursor` query parameter page as lists do; `?generation=` pins the release.
+
+Only fields marked filterable can be filtered or sorted on: `"index": true` in the content type's definition,
+on a top-level field of a simple kind (single-line text, number, yes or no, choice, date, time, date and time,
+email, web address, URL name, or a single link). The Studio doesn't set this flag yet; change the content
+type through the API. With a token that may change content types:
+
+```sh run=delivery
+curl -s -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-Match: "v2"' \
+  -H "Idempotency-Key: index-recipe-minutes-1" \
+  -d '{"name": "Recipes", "title_field": "dish", "fields": [
+        {"id": "dish", "label": "Dish", "type": "text", "required": true, "max_chars": 200, "multiline": false},
+        {"id": "minutes", "label": "Minutes", "type": "number", "required": false, "integer": true, "index": true},
+        {"id": "method", "label": "Method", "type": "rich_text", "required": false}]}' | grep -o '"version":[0-9]*'
+```
+
+```text output=delivery
+"version":3
+```
+
+The `If-Match` value is the content type's `ETag` from `GET …/content-types/recipes`. Marking a field
+filterable changes no stored content, so the change is accepted at once. Now ask for recipes that take
+30 minutes or less, quickest first:
+
+```sh run=delivery
+curl -s -X POST "http://localhost:8080/content/v1/$PROJECT/production/recipes/query" \
+  -H "Content-Type: application/json" \
+  -d '{"filters": [{"field": "minutes", "op": "lte", "value": 30}], "sort": [{"field": "minutes", "dir": "asc"}], "fields": ["dish", "minutes"]}'
+```
+
+<details>
+<summary>Response: the matching entries, and the query as the server understood it</summary>
+
+```json output=delivery
+{
+  "data": [
+    {
+      "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+      "revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+      "collection": "recipes",
+      "title": "Ginger biscuits",
+      "content": {
+        "dish": "Ginger biscuits",
+        "minutes": 18
+      },
+      "content_hash": "sha256:c5bf245116480f76059c722c21eb69982cb2e27fc79c70503f42c99ccd44092b",
+      "published_in": 2,
+      "visibility": "public"
+    }
+  ],
+  "next_cursor": null,
+  "applied": {
+    "query": {
+      "depth": 0,
+      "fields": [
+        "dish",
+        "minutes"
+      ],
+      "filters": [
+        {
+          "field": "minutes",
+          "op": "lte",
+          "value": 30
+        }
+      ],
+      "limit": 20,
+      "sort": [
+        {
+          "dir": "asc",
+          "field": "minutes"
+        }
+      ]
+    },
+    "query_hash": "sha256:4bf43f25eb6a63005f6f70f48ac2720fc8e8ab348b40e67bbd0ebd764d33b1c2"
+  }
+}
+```
+
+</details>
+
+`applied.query` is your document in its canonical form and `applied.query_hash` names it; the cache keys on
+that hash. A filter on a field that isn't filterable is refused with `422 field_not_indexed`, at the filter's
+pointer. The management API's `…/entries/query` takes the same document over drafts.
+
+## Taken-down content
+
+Unpublishing is a publish request too: in the Studio, **Unpublish** on a live entry, or `"unpublish": [ids]`
+in a request through the API. Its release takes the entry down at **every** release, not just from now on:
+
+{/* snippet delivery: snippets/take-down.sh */}
+
+```sh run=delivery
+curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY"
+```
+
+```http output=delivery
+HTTP/1.1 410 Gone
+content-type: application/json
+cache-control: no-store
+x-request-id: 01a1ee74-3fbe-7615-a02c-551cdce64e44
+content-length: 132
+date: Wed, 18 Nov 2026 11:39:18 GMT
+
+{
+  "error": {
+    "code": "gone",
+    "message": "this was published and has been taken down",
+    "request_id": "01a1ee74-3fbe-7615-a02c-551cdce64e44"
+  }
+}
+```
+
+```sh run=delivery
+curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY?generation=2"
+```
+
+```text output=delivery
+410
+```
+
+The answer is `410 gone`, never cached (`no-store`), and it stays so at every `?generation=` until the entry
+is published again. Lists and queries leave the entry out. Caches inside Colophon are keyed so nothing cached
+before the take-down is served after it, and a CDN connection purges the entry's tags. What a browser or a
+reader already downloaded can't be recalled.
+
+## Images
+
+A row that uses uploads, in an image field or inside rich text, carries `media`, keyed by asset id:
+
+```json
+"media": {
+  "01a1…": {
+    "url": "http://localhost:8080/media/v1/{project}/production/01a1…/{sha256}",
+    "current_url": "http://localhost:8080/media/v1/{project}/production/01a1…",
+    "type": "image/webp",
+    "width": 2400,
+    "height": 1600,
+    "renditions": { "w320": "…/{sha256}/w320", "w1280": "…/{sha256}/w1280" }
+  }
+}
+```
+
+`url` is the exact version the release published, and never changes: a pinned read shows the images of its
+release, and a replaced image reaches the site when the entries using it are published again. `current_url`
+always follows the newest version. `renditions` lists only the sizes that exist. Media is served publicly from
+`/media/v1`; an operator can move it to another host or a CDN with `COLOPHON_MEDIA_URL`.
+
+## Languages
+
+A translation in Colophon is an entry of its own, linked to the others of its group, and each is published on
+its own. The delivery API doesn't choose between them yet: rows carry no locale, and there is no `?locale=` or
+fallback from one language to another. Give the content type a field your site can filter on, or read each
+translation by its id. Choosing a language, with fallback as an explicit project setting, is **Planned**.
+
+## Gated content and live updates
+
+An entry published for signed-in site users or for one audience role is answered only to a request carrying
+that site user's session (`Authorization: Bearer <session token>` or the `colophon_audience` cookie). Those
+answers are `private`, never shared-cached, and marked `colophon-cache: bypass`. Without a session, gated
+entries are `404`, like unpublished ones.
+
+`GET /content/v1/{project}/{environment}/events` is a public server-sent event stream that sends `change`
+when something is published, with no details, so an open page can read again. See [Live events](/api/live-events/).
+
+## Limits
+
+Delivery is counted per client address: 1,000 requests a second with bursts of 2,000 by default, then `429
+rate_limited` with `Retry-After`. Each address may hold 8 open event streams. Behind a reverse proxy the
+operator must set `COLOPHON_TRUSTED_PROXIES`, or every visitor shares the proxy's count.

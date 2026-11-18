@@ -1,0 +1,59 @@
+---
+title: Introduction
+description: What Colophon is, who it is for, and where to start reading.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Colophon is an open-source, self-hosted headless CMS. Editors write and publish in the **Studio**, a web app;
+websites and apps read published content as JSON from the **delivery API**; scripts, build tools and AI agents
+read and write through the **management API**, with the same permission checks the Studio uses.
+
+What sets it apart is what happens after **Publish**. Every publish becomes a numbered **release**, and each
+release keeps a **receipt**: what went live, which website connections were told, and where the release was
+actually seen. If something is wrong, a rollback is just another release that puts earlier content back.
+
+In a book, the colophon is the note at the back that records how, when and by whom it was printed. Colophon
+keeps that record for a website.
+
+## Who it is for
+
+- **Editors** write, preview, review and publish in the Studio, in plain words, without a terminal. Drafts save
+  as you type, and a save that would overwrite someone else's newer work is refused rather than lost.
+- **Developers** model content as content types, read it from any framework over HTTP, and automate with the
+  `colophon` CLI, the TypeScript SDK or plain `curl`.
+- **Scripts and agents** get project API tokens that can do only what they are given, with an end date, optional
+  rate and volume limits, and a revoke button that stops them at once. Agents can draft and propose changes,
+  but can never approve their own work.
+- **Operators** run one server binary next to PostgreSQL, with a Docker compose file for a first install and a
+  systemd + Caddy path for production.
+
+## How the pieces fit
+
+| Piece | What it is | Who uses it |
+|---|---|---|
+| Studio | The web app at `/studio/` on your server | Editors, reviewers, owners |
+| Delivery API | `GET /content/v1/{project}/{environment}/…`: published content, no sign-in | Your website or app |
+| Management API | `/api/v1/…`: everything the Studio can do, signed in or with an API token | Scripts, build tools, the CLI, the SDK |
+| GraphQL | Read-only queries over drafts, for signed-in tools | Developer tools |
+| Live events | Server-sent events that say content changed | Sites that update without a rebuild |
+| CLI, SDK, MCP server | `colophon`, `@colophon-cms/sdk`, and an MCP server for AI agents | Developers and agents |
+
+PostgreSQL is the only source of truth. The cache (Valkey) and object storage (S3-compatible, Garage in the
+quick start) make things fast and hold uploads; losing the cache never loses content or skips a permission check.
+
+:::note[Status]
+Colophon is pre-release (version `0.1.0-alpha.1`). Every page here describes what is on the `main` branch of
+[colophon-cms](https://github.com/akira-shirase-oss/colophon-cms) today, checked against its source and its
+OpenAPI document. Nothing is published to npm, Homebrew or a container registry yet, so installs build from a
+clone. The [changelog](/changelog/) lists what has shipped, newest first.
+:::
+
+## Start here
+
+<CardGrid>
+	<LinkCard title="Quick start" href="/quick-start/" description="Install with one command, publish an entry, then call both APIs with a token." />
+	<LinkCard title="Authentication & API tokens" href="/api/authentication/" description="Which API needs which credential, the exact header, and what a token can never do." />
+	<LinkCard title="APIs overview" href="/api/" description="Delivery, management, GraphQL and live events: which to use when." />
+	<LinkCard title="Core concepts" href="/concepts/" description="Projects, environments, entries, publish requests, releases and receipts." />
+</CardGrid>

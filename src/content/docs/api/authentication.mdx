@@ -1,0 +1,537 @@
+---
+title: Authentication & API tokens
+description: Which credential each Colophon API takes, how to send it, how to make, scope, limit and revoke project API tokens, what a token can never do, and the exact errors you get.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+Colophon's [delivery API](/api/delivery/) needs no credential: published content is public. Everything else,
+reading drafts and writing, needs one. Scripts, site builds and other tools use a **project API token**;
+people use their own sign-in.
+
+## Which credential goes where
+
+| Credential | Looks like | Who it is | Works on |
+|---|---|---|---|
+| **None** | | Anyone | The delivery API (`/content/v1`), media (`/media/v1`), `/version`, `/openapi.json`, `/livez`, `/readyz` |
+| **Project API token** | `colophon_api_` and 43 more characters | The token itself, an identity of its own | Its own project's content routes, `/api/v1/projects/{project}/environments/{environment}/…`, and `POST /api/v1/rich-text/validate` |
+| **Personal access token** | an opaque string from `colophon login` | A person, with their roles | Every management route that person may use, for 30 days |
+| **Browser session** | the `colophon_session` cookie | A person signed in to the Studio | Every management route; writes also need `X-CSRF-Token` and a trusted `Origin` |
+| **Site user session** | a bearer token or the `colophon_audience` cookie | One of your website's visitors | Gated content on the delivery API, and the audience routes |
+| **Preview token** | `cpv_` and more | Whoever opened the preview | `/preview/v1`, for one entry or publish request, for 15 minutes |
+
+This page is about the first three. Site user sessions are covered with [gated content](/api/#gated-content);
+preview tokens with [Preview](/studio/preview/).
+
+## Send the token in the `Authorization` header
+
+Every token goes in one header, the same way for every route that takes it:
+
+```http
+Authorization: Bearer colophon_api_…
+```
+
+There is no query-string form and no custom header: a credential in a URL ends up in logs and browser history.
+
+**The management API.** Ask the server what this token may do:
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/permissions" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+<details>
+<summary>Response: <code>200 OK</code>, a full-access token's permissions</summary>
+
+```http output=tokens
+HTTP/1.1 200 OK
+content-type: application/json
+x-request-id: 01a1ee74-3bf3-7597-a87a-abcbcf101b69
+content-length: 392
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "data": {
+    "kind": "token",
+    "role": null,
+    "permissions": [
+      {
+        "action": "content.read",
+        "subject": "*"
+      },
+      {
+        "action": "content.create",
+        "subject": "*"
+      },
+      {
+        "action": "content.update",
+        "subject": "*"
+      },
+      {
+        "action": "content.delete",
+        "subject": "*"
+      },
+      {
+        "action": "content.review",
+        "subject": "*"
+      },
+      {
+        "action": "content.publish",
+        "subject": "*"
+      },
+      {
+        "action": "schema.change",
+        "subject": "*"
+      },
+      {
+        "action": "destinations.manage",
+        "subject": "*"
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+**GraphQL** takes the same header on `POST …/collections/{collection}/graphql`:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ entries(first: 5) { nodes { id title } } }"}'
+```
+
+**Live events** too, on the signed-in stream (`curl -N` keeps the stream open):
+
+```sh
+curl -N "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+**The delivery API** takes no token. If you send one anyway it is ignored and the read is anonymous; it never
+unlocks drafts or gated content.
+
+**The SDK** attaches it for you: `new Client({ baseUrl, token: process.env.COLOPHON_TOKEN })`.
+
+## Project API tokens
+
+A project API token belongs to one project. It holds permissions the way a role does, it ends on a date you
+choose, and anything it writes is recorded as written by that token, not by the person who made it.
+
+### Make one in the Studio
+
+You need a role that manages API tokens; owners do by default.
+
+<Steps>
+
+1. Open the project's **Settings** → **API tokens** and press **New token**.
+2. Give it a **Name** that says what uses it (`Site build`, `Import script`): it is how you'll know which one
+   to revoke. A **Description** is optional.
+3. Choose **What it may do**: **Read only**, **Full access** or **Custom** (below).
+4. Choose how long it **Works for**: 7 days, 30 days, 90 days, 6 months or a year.
+5. Press **Make the token**, then **Copy** the token. It is shown **once**: Colophon stores only its SHA-256
+   fingerprint, so a lost token can't be shown again. Revoke it and make another.
+
+</Steps>
+
+The list shows each token's state (**Active**, **Ended** or **Revoked**), what it may do, when it was last
+used, when it stops working and who made it.
+
+### What a token may do
+
+| In the Studio | `kind` in the API | Permissions |
+|---|---|---|
+| **Read only** | `read-only` | `content.read` on every content type: sees every entry, drafts included, and changes nothing |
+| **Full access** | `full-access` | Every action a token may hold, on everything: `content.read`, `content.create`, `content.update`, `content.delete`, `content.review`, `content.publish`, `schema.change`, `destinations.manage` |
+| **Custom** | `custom` | Exactly the permissions you list, each for every content type (`*`) or one content type, optionally narrowed to some fields or to the token's own entries |
+
+A token can never hold more than the person making it may do. Making a token with a power your role lacks is
+refused with `403` and `details.reason` `cannot_grant`.
+
+### How long it lasts
+
+Between 1 and 366 days (`expires_in_days`); the Studio offers 7, 30, 90, 180 and 365. After that the token
+answers `401 unauthorized`, exactly as a revoked one does, and the Studio shows it as **Ended**. To replace a
+token without downtime, make the new one, switch your site or script to it, then revoke the old one.
+
+A project holds at most 100 active tokens; one more is refused with `422` and `too_many_tokens`.
+
+### Make one with the API
+
+The token routes are for people: they take a personal access token or a browser session, never an API token.
+Here the project's owner makes a read-only token for a nightly site build:
+
+{/* snippet tokens: snippets/personal-token.sh */}
+
+```sh run=tokens
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/tokens" \
+  -H "Authorization: Bearer $PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Nightly build", "kind": "read-only", "expires_in_days": 30}'
+```
+
+<details>
+<summary>Response: <code>201 Created</code>, with the secret</summary>
+
+```http output=tokens
+HTTP/1.1 201 Created
+content-type: application/json
+x-request-id: 01a1ee74-3c85-767b-b1c0-c10310722d09
+content-length: 527
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "data": {
+    "id": "01a1ee74-3c87-7615-b145-77e406400537",
+    "identity_id": "01a1ee74-3c87-7615-b145-77e5fe9fe634",
+    "name": "Nightly build",
+    "description": "",
+    "kind": "read-only",
+    "permissions": [
+      {
+        "action": "content.read",
+        "subject": "*"
+      }
+    ],
+    "state": "active",
+    "created_by": {
+      "id": "01a1ee74-2549-74be-9e59-754b0adafad3",
+      "name": "Akira Shirase"
+    },
+    "created_at": "2026-11-18T11:39:17.511009Z",
+    "expires_at": "2026-12-18T11:39:17.511884Z",
+    "last_used_at": null,
+    "revoked_at": null,
+    "limits": null,
+    "secret": "colophon_api_LGoSTqAWrhLQl7L67mVV97EV0qJCsyHL84u-Mfxq5QY"
+  }
+}
+```
+
+</details>
+
+`secret` appears in this answer and nowhere else. Keep it, and the token's `id`, for the steps below:
+
+```sh
+export BUILD_TOKEN='colophon_api_…'      # data.secret
+export BUILD_TOKEN_ID='…'                # data.id
+```
+
+{/* snippet tokens: snippets/from-last.sh BUILD_TOKEN=.data.secret BUILD_TOKEN_ID=.data.id */}
+
+`PERSONAL_TOKEN` here is the owner's personal access token. `colophon login --server http://localhost:8080`
+gets one through a browser approval and keeps it in `~/.config/colophon/credentials.json`; see [CLI](/cli/).
+
+A **custom** token lists its permissions. Each is an `action` and a `subject` (`*` or a content type's
+address name), with optional `fields` and `condition: "own"`. This one may read recipes and create new ones,
+and nothing else:
+
+```json
+{
+  "name": "Recipe importer",
+  "kind": "custom",
+  "expires_in_days": 7,
+  "permissions": [
+    { "action": "content.read", "subject": "recipes" },
+    { "action": "content.create", "subject": "recipes" }
+  ]
+}
+```
+
+### Limits
+
+A token can also carry ceilings on its own work, as `limits` when it is made or later with `PATCH`. The Studio
+doesn't set them yet; use the API.
+
+| Limit | Range | What happens over it |
+|---|---|---|
+| `requests_per_minute` | 1 to 100,000 | `429 rate_limited` with `Retry-After`, before the request does any work |
+| `documents_per_day` | 1 to 1,000,000 | Entry creates, saves, translations and imported items over it: `403` with `budget_exceeded` |
+| `max_concurrent_jobs` | 1 to 64 | A publish whose website deliveries would hold more jobs at once: `403` with `budget_exceeded` |
+| `tokens_per_day`, `cost_per_day_micros` | 1 to 1,000,000,000; 1 to 100,000,000,000 | Ceilings for AI model calls, in model tokens and in millionths of a currency unit. Accepted and stored; nothing in Colophon spends against them yet |
+
+Days and minutes are rolling windows. A limit you leave out is unconstrained; `{"limits": null}` removes them
+all. Give the nightly build token a ceiling of two requests a minute:
+
+```sh run=tokens
+curl -s -X PATCH "http://localhost:8080/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
+  -H "Authorization: Bearer $PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"limits": {"requests_per_minute": 2}}' | grep -o '"limits":{[^}]*}'
+```
+
+```text output=tokens
+"limits":{"documents_per_day":null,"max_concurrent_jobs":null,"requests_per_minute":2,"tokens_per_day":null,"cost_per_day_micros":null}
+```
+
+Three reads in a row: the third is over the ceiling.
+
+```sh run=tokens
+for attempt in 1 2 3; do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+    -H "Authorization: Bearer $BUILD_TOKEN"
+done
+```
+
+```text output=tokens
+200
+200
+429
+```
+
+The refusal says when to try again, in seconds:
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $BUILD_TOKEN"
+```
+
+```http output=tokens
+HTTP/1.1 429 Too Many Requests
+content-type: application/json
+retry-after: 30
+x-request-id: 01a1ee74-3cf5-75b9-9fc9-28e8a1c17f35
+content-length: 191
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "too many requests; try again in 30 second(s)",
+    "details": {
+      "reason": "rate_limited",
+      "pointer": ""
+    },
+    "request_id": "01a1ee74-3cf5-75b9-9fc9-28e8a1c17f35"
+  }
+}
+```
+
+A token can't read or change its own limits. A person reads them, with what the token has used, from
+`GET /api/v1/projects/{project}/tokens/{token}` (`limits` and `usage`). Every change to a token's limits is
+recorded in the project's activity log, and so is the first refusal of each run of refusals.
+
+### Revoke a token
+
+In the Studio, press **Revoke** beside the token and confirm with **Revoke it**. With the API, a person sends
+`DELETE`:
+
+```sh run=tokens
+curl -s -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/tokens/$BUILD_TOKEN_ID" \
+  -H "Authorization: Bearer $PERSONAL_TOKEN" | grep -o '"state":"[a-z]*"'
+```
+
+```text output=tokens
+"state":"revoked"
+```
+
+Revoking is exact. It waits for requests already running under the token to finish, and once it has
+committed no new request starts: the next one is refused.
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $BUILD_TOKEN"
+```
+
+```http output=tokens
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+x-request-id: 01a1ee74-3d18-7462-a7f9-a90242bb3782
+content-length: 111
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "sign in first",
+    "request_id": "01a1ee74-3d18-7462-a7f9-a90242bb3782"
+  }
+}
+```
+
+What the token already did stays in the activity log, under its name. Revoking can't be undone.
+
+## What a token can never do
+
+A token is for content. These stay with people, whatever the token's kind:
+
+- **Manage access, or read the record of it.** No token may hold `members.manage`, `roles.manage`,
+  `tokens.manage` or `audit.read`, and the database refuses them too. A leaked token can't make another token,
+  invite anyone, raise a role or read what it did.
+- **Use the people routes**: `/me`, the project list, members, invitations, roles, tokens and the activity log
+  answer `403` with `api_token_not_allowed`.
+- **Approve a publish request that a token sent for review.** Any token approving any token's request is
+  refused with `403` and `agent_self_review`: a person has to approve. A token may still publish a request a
+  person approved, and may request changes. See [Management API](/api/management/#publish-through-the-api).
+- **Schedule a publish.** A schedule runs later as the person who made it, so tokens get `api_token_not_allowed`.
+- **Open a preview.** Previews show drafts to people; tokens are refused.
+- **Reach another project.** Another project's routes answer `404`, the same as a project that doesn't exist,
+  so a token can't find out what else is on the server.
+- **Do more than its maker.** A token never holds a power its maker's role didn't have when it was made.
+
+A token on a people route:
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/members" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+```http output=tokens
+HTTP/1.1 403 Forbidden
+content-type: application/json
+x-request-id: 01a1ee74-3d27-7348-b93d-7dd515862d84
+content-length: 262
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "forbidden",
+    "message": "an API token works only with its project's content; members, roles, tokens and the audit log stay with people",
+    "details": {
+      "reason": "api_token_not_allowed",
+      "pointer": ""
+    },
+    "request_id": "01a1ee74-3d27-7348-b93d-7dd515862d84"
+  }
+}
+```
+
+A token on a project that isn't its own:
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/01a1ee5f-0000-7000-8000-000000000000/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+```http output=tokens
+HTTP/1.1 404 Not Found
+content-type: application/json
+x-request-id: 01a1ee74-3d37-72f0-9a51-5da251070a78
+content-length: 111
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "not_found",
+    "message": "no such resource",
+    "request_id": "01a1ee74-3d37-72f0-9a51-5da251070a78"
+  }
+}
+```
+
+## Keep tokens on a server
+
+A token is a password for your project's content. Treat it like one:
+
+- Put it in a server's environment or a secret store, and read it from there (`process.env.COLOPHON_TOKEN`).
+  Never commit it, and never put it in front-end code, a browser bundle, a mobile app or a public build log.
+- A website reads published content from the delivery API with **no** token. If a page needs drafts, render it
+  on a server; to show editors a draft on the site, use [Preview](/studio/preview/), whose tokens are
+  short-lived and read one entry.
+- Give each script or site its own token with the least it needs, so you can revoke one without stopping the
+  rest. Prefer **Read only** or **Custom** over **Full access**, and short lifetimes over long ones.
+- The `colophon_api_` prefix lets secret scanners recognise a leaked token. If one leaks, revoke it at once
+  and check the activity log for what it did.
+
+## Rate limits
+
+Every server counts requests, shared across servers through Valkey when there are several:
+
+| Counted per | Covers | Default |
+|---|---|---|
+| Client address | The management API and sign-in (`/api/`, `/auth/`) | 300 requests a second, bursts of 600 |
+| Credential | The same routes, per token, cookie or personal token | 150 requests a second, bursts of 300 |
+| Client address | The delivery API (`/content/`) | 1,000 requests a second, bursts of 2,000 |
+
+Over a limit, the answer is `429` with `rate_limited` and a `Retry-After` header, before the request does any
+work. A token's own `requests_per_minute` applies on top. Health checks, `/version` and the Studio's files are
+never counted. Operators change these; see [Rate limits](/api/rate-limits/).
+
+## The errors you will get
+
+Every refusal is the same envelope: `code` for the kind, `details.reason` where there is one, a message safe to
+show a person, and the request id. Branch on `code` and `details.reason`.
+
+| Status | `code` | `details.reason` | When |
+|---|---|---|---|
+| `401` | `unauthorized` | | No credential, a malformed or unknown one, a revoked or expired token |
+| `403` | `forbidden` | `api_token_not_allowed` | A token on a people route, scheduling or previews |
+| `403` | `forbidden` | `missing_permission` | The token lacks the permission; `details.permission` names it |
+| `403` | `forbidden` | `agent_self_review` | A token approving a publish request a token sent |
+| `403` | `forbidden` | `budget_exceeded` | Over `documents_per_day` or `max_concurrent_jobs` |
+| `403` | `forbidden` | `cannot_grant` | Making a token with a power you don't have |
+| `404` | `not_found` | | Another project, or something the token may not see |
+| `422` | `validation_failed` | `invalid_expiry`, `permissions_required`, `too_many_tokens`, `invalid_limit` | A token the API refuses to make or change |
+| `429` | `rate_limited` | `rate_limited` | Over a rate limit; wait `Retry-After` seconds |
+
+No credential at all:
+
+```sh run=tokens
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries"
+```
+
+```http output=tokens
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+x-request-id: 01a1ee74-3d48-746a-91f9-41238360c59d
+content-length: 111
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "sign in first",
+    "request_id": "01a1ee74-3d48-746a-91f9-41238360c59d"
+  }
+}
+```
+
+A read-only token trying to write, which also shows `details.permission`. Make a read-only token in the
+Studio and send a create with it:
+
+{/* snippet tokens: snippets/read-only-token.sh */}
+
+```sh run=tokens
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $READ_ONLY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-scones-00001" \
+  -d '{"dish": "Scones"}'
+```
+
+```http output=tokens
+HTTP/1.1 403 Forbidden
+content-type: application/json
+x-request-id: 01a1ee74-3d6c-7367-8172-85f5fd8d1bf5
+content-length: 215
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "forbidden",
+    "message": "your role can't create entries here",
+    "details": {
+      "reason": "missing_permission",
+      "pointer": "",
+      "permission": "content.create"
+    },
+    "request_id": "01a1ee74-3d6c-7367-8172-85f5fd8d1bf5"
+  }
+}
+```
+
+The full list of codes is on [Errors](/api/errors/).
+
+## People: personal access tokens and sessions
+
+- **`colophon login`** signs the CLI in through the browser: it shows a code, you approve it in the Studio
+  where you're signed in, and the CLI receives a personal access token that acts as you for 30 days.
+  `colophon logout` revokes it. The SDK and `curl` can use the same token as a bearer token.
+- **The Studio** uses a session cookie. Writes made with a cookie must also send the `colophon_csrf` cookie's
+  value as `X-CSRF-Token`, from an `Origin` the server trusts exactly; bearer tokens need neither, since a
+  browser never attaches them by itself.
+
+Only people can approve their own work where their role allows it, manage access and schedule publishing.

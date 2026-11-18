@@ -1,0 +1,535 @@
+---
+title: Management API
+description: Write to Colophon from scripts and tools under /api/v1, with idempotency keys against lost answers, If-Match against lost updates, and publishing through publish requests, approval and releases.
+---
+
+The management API is everything the Studio can do, under `/api/v1`. The Studio, the CLI, the SDK and
+agents all call it, with the same permission checks, so anything a person can do in the Studio a script with
+the right token can do too, except the few things kept for [people](/api/authentication/#what-a-token-can-never-do).
+
+Content routes live under one prefix per environment:
+
+```text
+/api/v1/projects/{project}/environments/{environment}/…
+```
+
+`{project}` is the project's id and `{environment}` its name, `production` unless you made others. The
+examples continue from the [quick start](/quick-start/), with `PROJECT` and `COLOPHON_TOKEN` (a full-access
+token) set in your shell.
+
+## What is here
+
+| Resource | Routes under the prefix | What for |
+|---|---|---|
+| Content types | `content-types`, `content-types/{slug}`, `components` | Kinds of content and their fields; shared groups of fields |
+| Entries | `collections/{collection}/entries`, `…/entries/{entry}` | Drafts: list, create, read, save, delete |
+| Revisions | `…/entries/{entry}/revisions`, `…/revisions/{revision}` | Every saved version, newest first |
+| Queries | `collections/{collection}/entries/query`, `…/graphql` | Filter, sort and select over drafts; [GraphQL](/api/graphql/) |
+| Translations | `…/entries/{entry}/localizations?locale=` | A copy of an entry in another language |
+| Import and export | `collections/{collection}/import`, `…/export` | JSON Lines out and in; Strapi and Sanity documents in |
+| Publish requests | `changesets`, `changesets/{changeset}/submit`, `/reviews`, `/publish`, `/schedule`, `/refresh` | What goes live, reviewed and approved |
+| Releases | `releases`, `releases/{generation}`, `…/rollback` | Numbered releases, their receipts, and rolling back |
+| Schedules | `schedules`, `schedules/{schedule}` | Publish requests set to publish at a time |
+| Review stages | `review-stages` | Named approvals a publish request needs |
+| Website connections | `destinations`, `jobs` | Webhooks, CDN purges and site checks, and their delivery jobs |
+| Media | `assets`, `assets/{asset}`, `…/replace`, `…/references` | Uploads, their versions and where they are used |
+| Comments and tasks | `…/entries/{entry}/comments`, `tasks` | Discussion pinned to a revision, and editorial work |
+| Schema migrations | `migrations`, `migrations/{migration}/…` | Changing a content type that stored entries don't fit |
+| Bulk jobs | `bulk`, `bulk/{job}/…` | Many exact edits, applied one by one |
+| Live events | `events` | [Server-sent change hints](/api/live-events/) |
+| Your permissions | `permissions` | What the caller may do here |
+
+Project-level routes, for people only, sit beside them: `/api/v1/projects/{project}/members`,
+`/invitations`, `/roles`, `/tokens` and `/audit`. Every route, with its fields and answers, is in the
+[API reference](/api/reference/).
+
+## Answers and lists
+
+A success is `{"data": …}`. A list is `{"data": [...], "next_cursor": "…"}`: pass `next_cursor` back as
+`?cursor=` for the next page, until it is `null`. Lists that page take `?limit=` (1 to 100, 20 by default);
+lists that always fit in one answer (tokens, members, content types, publish requests, schedules) keep the
+same shape with `next_cursor: null`. A cursor belongs to the query that made it: using it elsewhere is
+refused with `422`.
+
+Every failure is the [error envelope](/api/errors/), and every response carries `x-request-id`.
+
+## Create: the `Idempotency-Key` header
+
+A request whose answer is lost in the network leaves you not knowing whether it happened. So every write
+that creates something, or could be repeated by mistake, requires an `Idempotency-Key` header: 16 to 128
+characters of `A–Z a–z 0–9 - _`, chosen by you, one per logical write.
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-ginger-biscuits-1" \
+  -d '{"dish": "Ginger biscuits", "minutes": 20}'
+```
+
+<details>
+<summary>Response: <code>201 Created</code></summary>
+
+```http output=management
+HTTP/1.1 201 Created
+content-type: application/json
+etag: "01a1ee74-3d83-7045-b45b-71f547bd815c"
+x-request-id: 01a1ee74-3d81-73b2-a2c2-d7d608be2064
+content-length: 632
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "data": {
+    "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+    "collection": "recipes",
+    "created_at": "2026-11-18T11:39:17.762522Z",
+    "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+    "updated_at": "2026-11-18T11:39:17.762522Z",
+    "revision": {
+      "id": "01a1ee74-3d83-7045-b45b-71f547bd815c",
+      "base_revision_id": null,
+      "author_id": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+      "created_at": "2026-11-18T11:39:17.762522Z",
+      "content_hash": "sha256:42b51afd2a354a17736eaf25ad91b57893ebf166238f6aae16fe17b6021095fa",
+      "title": "Ginger biscuits",
+      "visibility": "public"
+    },
+    "content": {
+      "dish": "Ginger biscuits",
+      "minutes": 20
+    },
+    "locale": null,
+    "localizations": [],
+    "visibility": "public"
+  }
+}
+```
+
+</details>
+
+Keep the entry's `id` and the `etag` header for the steps below:
+
+```sh
+export ENTRY='…'          # data.id
+export ETAG='"…"'         # the etag header, quotes included
+```
+
+{/* snippet management: snippets/from-last.sh ENTRY=.data.id ETAG=header:etag */}
+
+Send the **same request with the same key** again, as a retry after a timeout would, and you get the first
+answer back, marked `idempotent-replayed: true`. No second entry is made:
+
+```sh run=management
+curl -s -o /dev/null -D - -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-ginger-biscuits-1" \
+  -d '{"dish": "Ginger biscuits", "minutes": 20}' | grep -i -E '^(HTTP|idempotent-replayed)'
+```
+
+```text output=management
+HTTP/1.1 201 Created
+idempotent-replayed: true
+```
+
+The same key with a **different** body is a mistake, and is refused rather than guessed at:
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-ginger-biscuits-1" \
+  -d '{"dish": "Ginger biscuits", "minutes": 25}'
+```
+
+```http output=management
+HTTP/1.1 409 Conflict
+content-type: application/json
+x-request-id: 01a1ee74-3dbe-7499-99a1-e8d450c9bf5e
+content-length: 214
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "conflict",
+    "message": "this Idempotency-Key was already used for a different request",
+    "details": {
+      "reason": "idempotency_key_reused",
+      "pointer": ""
+    },
+    "request_id": "01a1ee74-3dbe-7499-99a1-e8d450c9bf5e"
+  }
+}
+```
+
+Rules worth knowing:
+
+- A key belongs to the caller, the operation and the environment, so two tokens can't collide.
+- Only successes are remembered. After a refusal, fix the request and send it again; a new key is fine.
+- A missing key on a route that needs one is `428 precondition_required`.
+- The SDK's `newIdempotencyKey()` makes one; keep it for every retry of that write.
+
+## Save: the `If-Match` header
+
+Reading an entry returns its current revision in the `ETag` header. A save must send it back as `If-Match`,
+so it can never overwrite a change it didn't see. A save is a new revision; nothing is ever written over.
+
+```sh run=management
+curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $ETAG" \
+  -H "Idempotency-Key: save-ginger-biscuits-1" \
+  -d '{"dish": "Ginger biscuits", "minutes": 18}'
+```
+
+<details>
+<summary>Response: <code>200 OK</code>, with the new revision's <code>etag</code></summary>
+
+```http output=management
+HTTP/1.1 200 OK
+content-type: application/json
+etag: "01a1ee74-3dd4-7003-8a3c-94e51101bfda"
+x-request-id: 01a1ee74-3dd2-773a-9b5a-e3172b2a3408
+content-length: 666
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "data": {
+    "id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+    "collection": "recipes",
+    "created_at": "2026-11-18T11:39:17.762522Z",
+    "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+    "updated_at": "2026-11-18T11:39:17.842889Z",
+    "revision": {
+      "id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+      "base_revision_id": "01a1ee74-3d83-7045-b45b-71f547bd815c",
+      "author_id": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+      "created_at": "2026-11-18T11:39:17.842889Z",
+      "content_hash": "sha256:c5bf245116480f76059c722c21eb69982cb2e27fc79c70503f42c99ccd44092b",
+      "title": "Ginger biscuits",
+      "visibility": "public"
+    },
+    "content": {
+      "dish": "Ginger biscuits",
+      "minutes": 18
+    },
+    "locale": null,
+    "localizations": [],
+    "visibility": "public"
+  }
+}
+```
+
+</details>
+
+A save is the **whole** content: fields you leave out are cleared. Send everything the entry should hold.
+
+Now save again with the **old** ETag, as a second editor who loaded the entry earlier would:
+
+```sh run=management
+curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $ETAG" \
+  -H "Idempotency-Key: save-ginger-biscuits-2" \
+  -d '{"dish": "Ginger biscuits", "minutes": 15}'
+```
+
+```http output=management
+HTTP/1.1 409 Conflict
+content-type: application/json
+etag: "01a1ee74-3dd4-7003-8a3c-94e51101bfda"
+x-request-id: 01a1ee74-3de8-7032-8b46-8d577c70499a
+content-length: 222
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "conflict",
+    "message": "the draft has changed since that revision; load the current one and try again",
+    "details": {
+      "reason": "stale_revision",
+      "pointer": ""
+    },
+    "request_id": "01a1ee74-3de8-7032-8b46-8d577c70499a"
+  }
+}
+```
+
+The refusal's `etag` header names the revision that is current now. Read the entry again, merge your change
+into it, and save with that ETag. Without `If-Match` at all, a save is `428`; `If-Match: *` and a malformed
+value are `400`.
+
+## Validation
+
+The body is checked against the content type before anything is stored. A refusal names the rule in
+`details.reason` and the place in `details.pointer`, a JSON Pointer into your body:
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: create-flapjacks-0001" \
+  -d '{"dish": "Flapjacks", "minutes": "twenty"}'
+```
+
+```http output=management
+HTTP/1.1 422 Unprocessable Entity
+content-type: application/json
+x-request-id: 01a1ee74-3dfb-7579-a02f-c2cc458424d9
+content-length: 177
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Minutes is a number",
+    "details": {
+      "reason": "wrong_type",
+      "pointer": "/minutes"
+    },
+    "request_id": "01a1ee74-3dfb-7579-a02f-c2cc458424d9"
+  }
+}
+```
+
+Rich-text fields hold a JSON document in Colophon's own format,
+`{"schema": "colophon/rich-text", "version": 1, "doc": {…}}`, never HTML; the server checks every one. To
+check a document without saving anything, `POST /api/v1/rich-text/validate`.
+
+## Publish through the API
+
+Publishing is never a flag on an entry. You open a **publish request** (`changesets` in the API) naming the
+entries, send it for review, someone approves exactly what it pins, and publishing it makes the next
+numbered release. The steps, with the token:
+
+### 1. Open a publish request
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: request-ginger-biscuits-1" \
+  -d "{\"title\": \"Add ginger biscuits\", \"entries\": [\"$ENTRY\"]}"
+```
+
+<details>
+<summary>Response: <code>201 Created</code>, pinning the entry's current revision</summary>
+
+```http output=management
+HTTP/1.1 201 Created
+content-type: application/json
+etag: "sha256:73815ebbcdc8b3b641e779187eaf0460486f384e5be0d6c954c6c77c16089fb7"
+x-request-id: 01a1ee74-3e0e-741b-84e0-72c1421aad88
+content-length: 932
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "data": {
+    "id": "01a1ee74-3e10-71a4-9437-e69ddbacdc20",
+    "title": "Add ginger biscuits",
+    "hash": "sha256:73815ebbcdc8b3b641e779187eaf0460486f384e5be0d6c954c6c77c16089fb7",
+    "status": {
+      "state": "open",
+      "generation": null,
+      "by": null,
+      "self_review": false,
+      "edited_items": 0
+    },
+    "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+    "created_at": "2026-11-18T11:39:17.902675Z",
+    "submitted_by": null,
+    "submitted_at": null,
+    "updated_at": "2026-11-18T11:39:17.902675Z",
+    "rollback_generation": null,
+    "items": [
+      {
+        "kind": "publish",
+        "entry_id": "01a1ee74-3d83-7045-b45b-71f61ccd9352",
+        "collection": "recipes",
+        "revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+        "title": "Ginger biscuits",
+        "content_hash": "sha256:c5bf245116480f76059c722c21eb69982cb2e27fc79c70503f42c99ccd44092b",
+        "schema_version": 2,
+        "current_revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
+        "edited": false,
+        "published_revision_id": null,
+        "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15"
+      }
+    ],
+    "reviews": [],
+    "stages": []
+  }
+}
+```
+
+</details>
+
+The request **pins** each entry's revision of this moment, and its `hash` covers exactly those revisions.
+Every later step sends that hash as `If-Match`: if an entry is saved again meanwhile, the hash no longer
+matches and the step is refused with `409 stale_changeset`, so nobody approves or publishes something they
+didn't see. `POST …/refresh` re-pins the current revisions. `"unpublish": [ids]` in the body takes entries
+down instead.
+
+```sh
+export REQUEST='…'        # data.id
+export HASH='"sha256:…"'  # the etag header
+```
+
+{/* snippet management: snippets/from-last.sh REQUEST=.data.id HASH=header:etag */}
+
+### 2. Send it for review
+
+```sh run=management
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/submit" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "If-Match: $HASH" | grep -o '"state":"[a-z_]*"'
+```
+
+```text output=management
+"state":"awaiting_review"
+```
+
+### 3. A person approves it
+
+A token can't approve a request that a token sent for review:
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $HASH" \
+  -d '{"decision": "approve"}'
+```
+
+```http output=management
+HTTP/1.1 403 Forbidden
+content-type: application/json
+x-request-id: 01a1ee74-3e4f-7401-928c-8956ca061374
+content-length: 240
+date: Wed, 18 Nov 2026 11:39:17 GMT
+
+{
+  "error": {
+    "code": "forbidden",
+    "message": "an API token can't approve a changeset an API token submitted; it needs a person's approval",
+    "details": {
+      "reason": "agent_self_review",
+      "pointer": ""
+    },
+    "request_id": "01a1ee74-3e4f-7401-928c-8956ca061374"
+  }
+}
+```
+
+A reviewer approves it in the Studio (**Publish requests** → the request → **Approve this version**), or with
+their own credential. Here the owner approves with their personal access token:
+
+```sh run=management
+curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
+  -H "Authorization: Bearer $PERSONAL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $HASH" \
+  -d '{"decision": "approve", "comment": "Checked the baking time."}' | grep -o '"state":"[a-z_]*"'
+```
+
+```text output=management
+"state":"approved"
+```
+
+`{"decision": "request_changes"}` sends it back instead. If the environment has [review
+stages](/studio/publishing/), each stage needs its own approval and the body names it with `"stage"`.
+
+### 4. Publish it
+
+Publishing goes on top of the release you have seen: send its number as `base_generation`. Read it from the
+releases list, whose `colophon-generation` header names the newest release:
+
+```sh run=management
+curl -s -o /dev/null -D - "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases?limit=1" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" | grep -i '^colophon-generation'
+```
+
+```text output=management
+colophon-generation: 1
+```
+
+```sh run=management
+curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/publish" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $HASH" \
+  -H "Idempotency-Key: publish-ginger-biscuits-1" \
+  -d '{"base_generation": 1}'
+```
+
+```http output=management
+HTTP/1.1 201 Created
+content-type: application/json
+x-request-id: 01a1ee74-3e8d-7077-a50e-55f399cd8624
+content-length: 224
+date: Wed, 18 Nov 2026 11:39:18 GMT
+
+{
+  "data": {
+    "generation": 2,
+    "epoch": 1,
+    "changeset_id": "01a1ee74-3e10-71a4-9437-e69ddbacdc20",
+    "changeset_hash": "sha256:73815ebbcdc8b3b641e779187eaf0460486f384e5be0d6c954c6c77c16089fb7",
+    "entries_changed": 1,
+    "entries_unpublished": 0
+  }
+}
+```
+
+Release 2 is one database transaction: every entry in the request goes live together, or none does. If
+another release committed after the one you named, publishing is refused with `409 generation_moved` and a
+`colophon-generation` header naming the current release; look at what changed, then publish on top of it.
+
+### 5. Read the receipt
+
+```sh run=management
+curl -s "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases/2" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+```json output=management
+{
+  "data": {
+    "generation": 2,
+    "epoch": 1,
+    "changeset_id": "01a1ee74-3e10-71a4-9437-e69ddbacdc20",
+    "title": "Add ginger biscuits",
+    "changeset_hash": "sha256:73815ebbcdc8b3b641e779187eaf0460486f384e5be0d6c954c6c77c16089fb7",
+    "published_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15",
+    "published_by_name": "Recipe site",
+    "published_at": "2026-11-18T11:39:18.030105Z",
+    "entries": 1,
+    "unpublished": 0,
+    "purge": "none",
+    "label": "published",
+    "locations": 0,
+    "deliveries": [],
+    "observations": []
+  }
+}
+```
+
+`label` is the release's state in plain terms. With no website connections it is `published`: live in
+Colophon, nothing else told. With connections, `deliveries` lists what each webhook, CDN purge or site check
+reported and `observations` where the release was actually seen; see [Website connections &
+receipts](/api/website-connections/).
+
+To publish later instead, `POST …/changesets/{changeset}/schedule` with a local time and an IANA time zone,
+as a person. To put an earlier release back, `POST …/releases/{generation}/rollback` opens a publish request
+that restores it, reviewed like any other. See [Scheduling](/studio/scheduling/) and [Rollback](/studio/rollback/).
+
+## Content types
+
+A full-access token, or any credential with `schema.change`, can manage content types. A content type's
+`ETag` is `"v<version>"`; a change sends it as `If-Match` with an `Idempotency-Key`, and is checked against
+every stored draft and published revision first. A change that would make stored entries invalid is refused
+with `422 needs_migration`, naming the first entries in the way; a [schema
+migration](/api/reference/) plans and applies such a change entry by entry. The [Delivery API](/api/delivery/#filter-and-sort)
+page shows a change that makes a field filterable.

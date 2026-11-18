@@ -1,0 +1,212 @@
+---
+title: Installation
+description: Run Colophon with Docker Compose on one machine, serve it on a domain, or install it as a systemd service behind Caddy, and upgrade it safely.
+---
+
+Colophon is one server binary, `colophon-server`, that holds the API, the background worker and the Studio,
+next to PostgreSQL (the only source of truth), Valkey (a cache it can lose) and S3-compatible storage for
+uploads. There are two supported ways to run it:
+
+| | Docker Compose (quick start) | systemd + Caddy (production) |
+|---|---|---|
+| For | One machine with Docker: trying it, a small site, a server you run yourself | A Linux host without containers, or a managed database |
+| Brings | Colophon, PostgreSQL 18, Valkey and Garage, wired together | Only Colophon; you bring PostgreSQL, storage and optionally Valkey |
+| HTTPS | Put your own proxy in front | Caddy, with automatic certificates |
+
+:::caution[Before the first release]
+Colophon hasn't published a release yet: no container image on a registry, no binaries to download. Both
+paths below build from a clone of [colophon-cms](https://github.com/akira-shirase-oss/colophon-cms). Once
+releases exist, each will carry a `compose.yaml` that pins its image, and prebuilt binaries.
+:::
+
+## Requirements
+
+- **Docker** with Compose 2.24 or newer for the quick start. Nothing else: Docker compiles Colophon.
+- About **1.5 GB** of disk for the images and **1 GB** of memory for the whole stack at rest.
+- For production: a **Linux** host with systemd, **PostgreSQL 18**, S3-compatible object storage (Garage is
+  the one Colophon is tested against), and optionally **Valkey** or another Redis-protocol cache.
+- To use the Studio, a current browser. To build the TypeScript SDK, **Node.js 22.17** or newer.
+
+## Docker Compose
+
+```sh
+git clone https://github.com/akira-shirase-oss/colophon-cms.git
+cd colophon-cms
+docker build -f deploy/image/Dockerfile \
+  --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+  -t colophon:local .
+cd deploy/quickstart
+echo "COLOPHON_IMAGE=colophon:local" >.env
+docker compose up -d --wait
+```
+
+The build takes about ten minutes on a laptop; `up --wait` then returns in under a minute, once Colophon is
+ready. Open `http://localhost:8080/studio/` and follow [Quick start](/quick-start/) Part A for the first account
+and the setup code. Run every later `docker compose` command in `deploy/quickstart`.
+
+### What runs
+
+| Service | What it does | Runs |
+|---|---|---|
+| `colophon` | The API, the worker and the Studio, as an unprivileged user on a read-only file system | Always |
+| `postgres` | PostgreSQL 18, with password authentication even on loopback | Always |
+| `valkey` | The cache: 128 MB, nothing kept on disk | Always |
+| `garage` | Object storage for uploads | Always |
+| `secrets` | Generates every password and key once, into volumes only the service that needs each can read | First start |
+| `roles`, `migrate` | Create the database roles and apply the schema. `migrate` refuses a database that is newer than the image | Every start |
+| `storage` | Creates the bucket and Colophon's key in Garage | Every start |
+| `pod` | Holds the network every service shares, and publishes Colophon's port | Always |
+
+Only Colophon's port leaves the stack, and only on `127.0.0.1`. PostgreSQL, Valkey and Garage are unreachable
+from the host and from other containers. No secret is written in `compose.yaml`, the image, or any container's
+environment; Colophon reads them from files.
+
+### Settings
+
+Put these in the environment or in `.env` beside `compose.yaml`:
+
+| Setting | Default | |
+|---|---|---|
+| `COLOPHON_PORT` | `8080` | The host port, on `127.0.0.1` only |
+| `COLOPHON_IMAGE` | the release's image | Which Colophon image to run; `colophon:local` for one you built |
+
+Other server settings go in a `compose.override.yaml` beside `compose.yaml`, as below. Every setting is listed
+in [Configuration](/self-hosting/configuration/).
+
+### Serve it on a domain
+
+The quick start listens on `127.0.0.1` only. To serve it to others, put a TLS reverse proxy (Caddy, nginx, a
+load balancer) in front of `127.0.0.1:8080`, and tell Colophon its public address and the proxy's:
+
+```yaml title="compose.override.yaml"
+services:
+  colophon:
+    environment:
+      COLOPHON_PUBLIC_URL: https://cms.example.com
+      COLOPHON_TRUSTED_PROXIES: 172.16.0.0/12   # the address your proxy connects from
+```
+
+Then `docker compose up -d --wait` again. `COLOPHON_PUBLIC_URL` is the address people open; sign-in trusts it
+exactly. Without `COLOPHON_TRUSTED_PROXIES`, every visitor looks like the proxy and they all share one
+[rate limit](/api/rate-limits/). Live updates are server-sent events: make sure your proxy doesn't buffer
+responses.
+
+### Stop, start and remove
+
+```sh
+docker compose stop            # stop, keeping everything
+docker compose up -d --wait    # start again
+docker compose down            # remove the containers; content stays in the volumes
+docker compose down --volumes  # remove everything, content included
+```
+
+## Production with systemd and Caddy
+
+Colophon's repository holds the three files for a Linux host, in `deploy/production`:
+
+| File | Install to | What it is |
+|---|---|---|
+| `colophon.service` | `/etc/systemd/system/` | The unit: secrets as systemd credentials, a dynamic user, a read-only file system, no privileges |
+| `colophon.env` | `/etc/colophon/colophon.env` | The settings that aren't secret |
+| `Caddyfile` | `/etc/caddy/Caddyfile` | HTTPS for your domain, proxied to Colophon on loopback |
+
+Colophon's CI checks them with `systemd-analyze verify` and `caddy validate`. They haven't yet been followed
+end to end on a real host, so treat a first install as a trial and report what you find.
+
+### 1. Binaries and the Studio
+
+Until there are release downloads, take the static Linux binaries and the Studio out of the image you built
+for the quick start (they match the build machine's architecture, `x86_64` or `aarch64`):
+
+```sh
+id=$(docker create colophon:local)
+docker cp "$id:/usr/local/bin/colophon-server" .
+docker cp "$id:/usr/local/bin/colophon" .
+docker cp "$id:/usr/share/colophon/studio" ./studio
+docker rm "$id"
+sudo install -m 0755 colophon-server colophon /usr/local/bin/
+sudo mkdir -p /usr/local/share/colophon && sudo cp -r studio /usr/local/share/colophon/studio
+```
+
+### 2. The database
+
+PostgreSQL 18, with an owner login that runs migrations. The server's own roles are made by the CLI with a
+password you generate, and secrets live in files readable by root only:
+
+```sh
+sudo install -d -m 0700 /etc/colophon/credentials
+head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/app_password >/dev/null
+echo 'postgres://owner:…@db.example.com/colophon?sslmode=verify-full' | sudo tee /etc/colophon/credentials/migration_database_url >/dev/null
+sudo chmod 0400 /etc/colophon/credentials/*
+sudo colophon admin init-roles --database-url-file /etc/colophon/credentials/migration_database_url \
+  --app-password-file /etc/colophon/credentials/app_password
+sudo colophon admin migrate --database-url-file /etc/colophon/credentials/migration_database_url
+```
+
+Then write `/etc/colophon/credentials/database_url` as
+`postgres://colophon_app:<app_password>@db.example.com/colophon?sslmode=verify-full`. A database on another
+machine must use `sslmode=verify-full`: the server refuses to start with anything weaker. See
+[Database TLS](/self-hosting/database-tls/).
+
+### 3. The cache and storage
+
+- **Cache:** `/etc/colophon/credentials/cache_url`, for example `redis://:<password>@127.0.0.1:6379` for a
+  Valkey bound to loopback. It is optional: without one, every delivery read goes to PostgreSQL; leave out the
+  unit's `cache_url` lines.
+- **Storage:** the `COLOPHON_S3_*` settings in `colophon.env`, and the secret key in
+  `/etc/colophon/credentials/s3_secret_key`. Garage is tested; other S3-compatible services (such as
+  Cloudflare R2 or DigitalOcean Spaces) are not verified yet, so try an upload end to end first.
+
+### 4. The service and the proxy
+
+```sh
+sudo install -m 0644 colophon.env /etc/colophon/colophon.env     # then edit it
+sudo install -m 0644 colophon.service /etc/systemd/system/colophon.service
+sudo systemctl daemon-reload && sudo systemctl enable --now colophon
+colophon doctor --server http://127.0.0.1:58000                 # exit 0 when ready
+sudo install -m 0644 Caddyfile /etc/caddy/Caddyfile
+sudo systemctl edit caddy      # add: [Service] Environment=COLOPHON_DOMAIN=cms.example.com
+sudo systemctl restart caddy
+```
+
+`colophon.env` sets `COLOPHON_LISTEN_ADDR=127.0.0.1:58000` (loopback, behind Caddy),
+`COLOPHON_PUBLIC_URL=https://cms.example.com` and `COLOPHON_TRUSTED_PROXIES=127.0.0.1/32`; change the
+domain to yours. The Caddyfile proxies everything to `127.0.0.1:58000` with `flush_interval -1`, so live
+updates reach browsers as they happen.
+
+### 5. The first administrator
+
+The setup code is in the service's log:
+
+```sh
+journalctl -u colophon | grep "Setup code"
+```
+
+Open `https://cms.example.com/studio/`, create the first account and enter the code.
+
+## Upgrading
+
+Colophon never changes its schema on its own: migrations run only when you run `colophon admin migrate`, and
+the server refuses a database whose schema it doesn't know.
+
+**Docker Compose.** Pull and rebuild, then start again; the `migrate` service applies the new schema before
+the new Colophon starts:
+
+```sh
+cd colophon-cms && git pull
+docker build -f deploy/image/Dockerfile \
+  --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+  -t colophon:local .
+cd deploy/quickstart && docker compose up -d --wait
+```
+
+Going back to an older image on a newer schema is refused; `docker compose logs migrate` says which migrations
+it doesn't know. Take a backup first ([Backups and restore](/self-hosting/backups/)).
+
+**systemd.** The order is: a verified backup, then `colophon admin migrate-status` with the **new** binary to
+see what it will apply, then `colophon admin migrate`, then swap the binaries and restart, then
+`colophon doctor`. Going back is a binary swap only while the schema still fits the old binary. Before 1.0,
+keep the server and the CLI from the same release: the CLI says plainly when it doesn't fit the server.
+
+Read the [changelog](/changelog/) for every change between your version and the new one, **Breaking**
+entries first.

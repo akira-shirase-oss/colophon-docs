@@ -1,0 +1,119 @@
+---
+title: Core concepts
+description: The ideas Colophon is built on, in the words the Studio and the API use - projects, environments, content types, entries and revisions, drafts and live content, publish requests, releases, receipts, roles and API tokens.
+---
+
+One page of vocabulary. Each term is given as the Studio says it, with the API's name where it differs.
+
+## Projects and environments
+
+A **project** is one website's content: its content types, entries, media, members, releases and settings. A
+Colophon server holds any number of projects, walled off from each other; someone who isn't in a project
+gets the same `404` for it as for one that doesn't exist. Only the server's administrator creates projects.
+The API addresses a project by its **id** (a UUID); its **URL name** (`field-notes`) is for people and the CLI.
+
+An **environment** is a separate copy of a project's content and release history inside it. Every project has
+one, `production`, and every content route names it: `/api/v1/projects/{project}/environments/production/…`.
+
+## Content types, collections and single types
+
+A **content type** is a kind of content and its fields: Recipes with a Dish, Minutes and a Method. Each field
+has a **code name** (`minutes`), which is its key in the API, and a kind: text, rich text, number, yes or no,
+choice, date and time, email, web address, link to entries, uploaded file, group of fields, list, page
+sections, shared component, Markdown, structured data, colour or URL name.
+
+- A **collection** holds many entries (articles, products).
+- A **single type** holds just one (site settings, the home page).
+- A **component** is a group of fields several content types share, like SEO fields.
+
+A content type has an **address name** (`recipes`) used in every route, and a version. A change that existing
+entries wouldn't fit is checked against every one of them first and refused until a **schema migration** says
+what to do with each.
+
+## Entries, revisions and drafts
+
+An **entry** is one item: one recipe. Every save makes a new **revision**; nothing is ever written over, so
+the **History** tab can compare and restore any of them. A save names the revision it was made on, and one made
+on a revision that is no longer current is refused instead of overwriting someone else's work.
+
+The current revision is the **draft**. The Studio saves as you type, and a draft is visible only inside the
+project: readers never see it until it is published.
+
+In the Studio, an entry is **Draft** (never published), **Live** (readers see this version) or **Changed**
+(live, with newer unpublished edits). Deleting an entry (through the API) leaves a tombstone, and is refused
+while the entry is live, linked from another entry, or in an open publish request.
+
+## Publish requests and review
+
+Nothing goes live by flipping a flag. A **publish request** (a *changeset* in the API) names entries to
+publish or take down and **pins** the exact revision of each at that moment.
+
+1. Someone makes the request and sends it **for review**.
+2. A reviewer **approves this version**, or requests changes. An approval counts only for the exact revisions
+   pinned; if an entry is saved again, the approval no longer counts.
+3. Someone allowed to publish **publishes** it.
+
+**Review stages** add named approvals in order (Legal, then Editor), each optionally needing a different
+person. A role allowed to approve and publish its own work does all three steps with one **Publish** press,
+and its approval is recorded. An **API token can never approve** a request that a token sent: agents propose,
+people approve. A request can also be **scheduled** for a local time in a named time zone.
+
+## Releases and receipts
+
+Publishing makes a **release**: one numbered, all-or-nothing change to what readers get. Release numbers
+(*generations* in the API) only go up. The delivery API answers from the latest release by default, names it
+in `Colophon-Generation`, and can read any earlier one with `?generation=`.
+
+Each release has a **receipt**: who published what, and what happened after. A **website connection** (a
+*destination*) is told about each release:
+
+- a **webhook** to rebuild your site,
+- a **CDN purge** that clears exactly the cached pages that changed,
+- a **site check** that reads your live site until it shows this release.
+
+The receipt records each delivery and each observation, and says plainly where the release stands:
+*Published in Colophon*, *Website update pending*, *Verified at* the locations that saw it, or *Needs
+attention*. It never claims more than was checked.
+
+## Taking down and rolling back
+
+**Unpublishing** is a publish request too. Its release takes the entry down at every release, past ones
+included: readers get `410 Gone` until it is published again.
+
+**Rollback** opens a publish request built from what an earlier release left live: it publishes again the
+versions that were live then, and takes down entries that are live now but weren't then. It is reviewed and
+published like any other request, as a **new** release; release numbers never go backwards. One rule matters:
+**an entry that was taken down is not brought back by a rollback**, even to a release where it was live. A
+takedown removes the entry from every release, and a rollback never silently reverses it. To bring it back,
+publish it again.
+
+## Roles and permissions
+
+Every project member has a **role**. Four come with every project:
+
+| Role | May |
+|---|---|
+| **Owner** | Everything: content (deleting included), review and publishing, content types, website connections, members, roles, API tokens, the audience and the activity log |
+| **Developer** | Read and write content, change content types and website connections |
+| **Publisher** | Read and write content, review it and publish it |
+| **Editor** | Read and write content |
+
+Owners can edit the others and make their own. A permission is an action (`content.read`, `content.create`,
+`content.update`, `content.delete`, `content.review`, `content.publish`, `schema.change`,
+`destinations.manage`, `members.manage`, `roles.manage`, `tokens.manage`, `audit.read`, `audience.manage`) on every content type
+or one, optionally limited to some fields or to the member's **own** entries. Every change to roles, members,
+invitations and tokens is written to an append-only **activity log**.
+
+## API tokens
+
+A **project API token** lets a script, a site build or another tool work with one project's content without
+anyone's password. It holds permissions like a role (**Read only**, **Full access** or **Custom**), never more
+than its maker's, ends on a date, can be revoked at once, and can carry rate and volume limits. It can never
+manage access or read the activity log. → [Authentication & API tokens](/api/authentication/)
+
+## Site users
+
+**Site users** are your website's visitors, not project members. They sign up, sign in with a password or an
+emailed link, and get an **audience role**. An entry can be published for everyone, for any signed-in site
+user, or for one audience role, and the delivery API enforces it in the database. They are managed under
+**Audience** in the Studio.

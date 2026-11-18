@@ -1,0 +1,97 @@
+---
+title: APIs overview
+description: Colophon's HTTP APIs side by side, which one to call for what, the credential each takes, and the conventions they share.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Colophon is one server with several HTTP surfaces. The Studio, the `colophon` CLI, the TypeScript SDK and AI
+agents all use the same management API with the same permission checks; your website reads the delivery API.
+All of them are on the same address as the Studio, for example `http://localhost:8080` in the quick start.
+
+## Which API to use
+
+| You want to | Use | Path | Credential |
+|---|---|---|---|
+| Show published content on a website or in an app | **Delivery API** | `GET /content/v1/{project}/{environment}/{collection}` and `/{entry}`, `POST …/{collection}/query` | None. Anyone may read what is published. A site user's session adds [gated content](#gated-content). |
+| Read drafts, write entries, publish, manage content types and website connections from a script or tool | **Management API** | `/api/v1/projects/{project}/environments/{environment}/…` | A project [API token](/api/authentication/), or a person's sign-in |
+| Manage people, roles, tokens and the activity log | **Management API**, as a person | `/api/v1/projects/{project}/members`, `/roles`, `/tokens`, `/audit` | A person's sign-in only; API tokens are refused |
+| Query drafts with GraphQL | **GraphQL** (read-only) | `POST /api/v1/projects/{project}/environments/{environment}/collections/{collection}/graphql` | Same as the management API |
+| Hear that content changed, without polling | **Live events** (server-sent events) | Published: `GET /content/v1/{project}/{environment}/events`. Everything: `GET /api/v1/projects/{project}/environments/{environment}/events` | Published: none. Everything: same as the management API |
+| Show a draft on your own site before it is published | **Preview API** | `/preview/v1/{project}/{environment}/…` | A preview token your site gets from a one-time code |
+| Serve uploaded images | **Media** | `GET /media/v1/{project}/{environment}/{asset}` | None |
+| Let an AI agent draft and propose | **MCP server** | `POST /api/v1/projects/{project}/environments/{environment}/mcp`, or `colophon mcp` over stdio | An API token |
+
+The short version: **websites read the delivery API with no credential; everything that reads drafts or
+writes goes through the management API with a token.** A token never belongs in a browser.
+
+## Delivery API
+
+Published content only, from the release you ask for (the latest by default). Answers carry the release
+number (`Colophon-Generation`), an `ETag` for conditional requests, and cache headers a CDN understands. A
+draft can never appear here: the delivery path reads with a database role that can't see drafts.
+
+```sh
+curl "http://localhost:8080/content/v1/$PROJECT/production/recipes"
+```
+
+→ [Delivery API](/api/delivery/)
+
+## Management API
+
+Everything the Studio can do, under `/api/v1`. Writes are protected against the two classic failures of a
+network: a lost answer (`Idempotency-Key` makes a retry return the first result) and a lost update
+(`If-Match` refuses a save made on a version that is no longer current).
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN"
+```
+
+→ [Management API](/api/management/) · [Authentication & API tokens](/api/authentication/)
+
+## GraphQL
+
+A read-only GraphQL endpoint per collection over **drafts**, for tools that prefer GraphQL. It runs the same
+query engine and permission checks as the management API's `entries/query`, and its schema names only the
+collections the caller may read. There are no mutations, and published content stays on REST.
+
+→ [GraphQL](/api/graphql/)
+
+## Live events
+
+Server-sent event streams that say *that* something changed, so a page or tool can fetch again. The public
+stream on `/content/v1` says only that published content changed; the signed-in stream on `/api/v1` says which
+kind of thing changed and in which collection. Neither sends content, and neither replays what you missed.
+
+→ [Live events](/api/live-events/)
+
+## Gated content
+
+An entry can be published for everyone (the default), for any signed-in site user, or for one audience role.
+Delivery answers gated entries only to a request carrying that site user's session, as
+`Authorization: Bearer <session token>` or the `colophon_audience` cookie, and such answers are never put in
+the shared cache. Site users are your website's visitors, set up under **Audience** in the Studio; they are
+never project members. A project API token is not a site user's session and does not unlock gated entries.
+
+## Shared conventions
+
+- **Versions in the path.** `/api/v1`, `/content/v1`, `/preview/v1`, `/media/v1`. `GET /version` names the
+  server's version and the API versions it serves.
+- **JSON in, JSON out.** Successful answers are `{"data": …}`, and lists are `{"data": […], "next_cursor": …}`.
+  Pass `next_cursor` back as `?cursor=` for the next page; it is `null` on the last page.
+- **One error shape.** Every failure is `{"error": {"code", "message", "details"?, "request_id"}}`. Branch on
+  `code` and `details.reason`, never on `message`. → [Errors](/api/errors/)
+- **Request ids.** Every response has an `x-request-id` header, and every error body repeats it.
+- **Projects by id.** The `{project}` in a path is the project's id (a UUID), shown in the Studio under
+  **Settings** → **General** → **Technical details**. `{environment}` is an environment's name; every project
+  has `production`.
+- **Rate limits.** Requests are counted per client address and per credential, and an over-limit request is
+  `429` with `Retry-After`. → [Rate limits](/api/rate-limits/)
+- **The contract.** The server describes itself in OpenAPI 3.1 at `GET /openapi.json`, generated from the
+  same route table it serves, so the document and the routes can't drift. → [API reference](/api/reference/)
+
+<CardGrid>
+	<LinkCard title="Authentication & API tokens" href="/api/authentication/" description="Every credential, the exact header, scopes, expiry, revoking, limits and errors." />
+	<LinkCard title="API reference" href="/api/reference/" description="Every route, generated from the OpenAPI document." />
+</CardGrid>
