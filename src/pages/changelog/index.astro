@@ -93,14 +93,14 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 					return (
 						<article class={`change change-${type.toLowerCase()}`} id={id} data-type={type} data-areas={entry.data.areas.join(',')}>
 							<h3 class="change-head">
-								<button type="button" class="change-toggle" aria-expanded="true" aria-controls={`${id}-body`}>
+								<button type="button" class="change-toggle" aria-expanded="true" aria-controls={`${id}-body`} aria-labelledby={`${id}-title`} aria-describedby={`${id}-summary ${id}-chips`}>
 									<span class="change-icon" aria-hidden="true">
 										<svg width="20" height="20"><use href={`#change-icon-${type.toLowerCase()}`} /></svg>
 									</span>
 									<span class="change-main">
-										<span class="change-title">{entry.data.title}</span>
-										<span class="change-summary">{summaryOf(entry)}</span>
-										<span class="change-chips">
+										<span class="change-title" id={`${id}-title`}>{entry.data.title}</span>
+										<span class="change-summary" id={`${id}-summary`}>{summaryOf(entry)}</span>
+										<span class="change-chips" id={`${id}-chips`}>
 											<time class="chip" datetime={entry.data.date.toISOString().slice(0, 10)}>{dayOf(entry.data.date)}</time>
 											<span class={`chip chip-type chip-${type.toLowerCase()}`}>{type}</span>
 											{entry.data.areas.map((area) => (
@@ -341,6 +341,11 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+	/* Open, the body starts with the same sentence, so the summary line steps aside (visually: the
+	   button's name is the title, and the summary and chips are its description either way). */
+	.change-toggle[aria-expanded='true'] .change-summary {
+		display: none;
 	}
 	.change-chips {
 		display: flex;
