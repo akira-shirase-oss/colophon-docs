@@ -1,8 +1,498 @@
 ---
 title: GraphQL
-description: "Read-only GraphQL over drafts, for signed-in tools."
+description: "Read drafts with GraphQL: one endpoint per collection, the schema it builds from your content types, filtering and sorting on filterable fields, paging, the bounds on a document, and how errors come back."
 ---
 
-:::note[Being written]
-This page is part of the next set of guides and is being written now. Until it lands, the [Quick start](/quick-start/) and the [API pages](/api/) cover the essentials, and the [changelog](/changelog/) lists what Colophon can do today.
-:::
+Colophon has a read-only GraphQL endpoint for tools that would rather speak GraphQL than JSON over REST. It
+reads **drafts**, with the same query engine and the same permission checks as the management API's
+`POST …/entries/query`: a GraphQL query and its REST twin run the same document and get the same answer.
+Your website should keep reading published content from the [delivery API](/api/delivery/).
+
+```text
+POST /api/v1/projects/{project}/environments/{environment}/collections/{collection}/graphql
+```
+
+There is one endpoint per content type: `{collection}` is its address name, and the schema is that content
+type's. It takes the same credentials as the [management API](/api/management/): an API token or a person's
+sign-in, in `Authorization: Bearer …`. A token needs `content.read` on the content type. The examples use the
+`recipes` content type from the [quick start](/quick-start/) (fields `dish`, `minutes` and `method`).
+
+## A first query
+
+The body is the usual GraphQL-over-HTTP request, sent as `application/json`:
+
+| Member | Required | What it is |
+|---|---|---|
+| `query` | Yes | The GraphQL document, at most 8,192 characters |
+| `operationName` | No | Which operation to run, when the document names several |
+| `variables` | No | An object of variable values |
+
+Any other member is refused with `400 malformed_json`, and a body without `Content-Type: application/json`
+with `415 unsupported_media_type`.
+
+```sh
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ entries(first: 5) { nodes { id title dish minutes published { generation } } pageInfo { endCursor hasNextPage } applied { query queryHash } } }"}'
+```
+
+<details>
+<summary>Response: <code>200 OK</code>, the one recipe there is</summary>
+
+```http
+HTTP/1.1 200 OK
+content-type: application/json
+x-request-id: 01a1ee84-376c-74dc-ab16-f0a138e53f0e
+content-length: 392
+date: Wed, 18 Nov 2026 11:56:44 GMT
+
+{
+  "data": {
+    "entries": {
+      "nodes": [
+        {
+          "id": "01a1ee81-13ee-70ff-9989-321e046286f8",
+          "title": "Lemon tart",
+          "dish": "Lemon tart",
+          "minutes": 45.0,
+          "published": {
+            "generation": 1
+          }
+        }
+      ],
+      "pageInfo": {
+        "endCursor": null,
+        "hasNextPage": false
+      },
+      "applied": {
+        "query": {
+          "depth": 0,
+          "fields": [
+            "dish",
+            "minutes"
+          ],
+          "filters": [],
+          "limit": 5,
+          "sort": []
+        },
+        "queryHash": "sha256:5a656ae54c6bf886480878c954ab51fba90a34f48c7023e08461aa3901a305d2"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+The answer is GraphQL's own `{"data": …, "errors": […]}`, not the `{"data": …}` wrapper the REST routes use.
+
+## The schema
+
+The schema is built for each request from the project's content types and the caller's role. It has two
+reads at the root, and nothing else:
+
+```graphql
+type Query {
+  entries(where: recipesFilter, orderBy: [recipesSort!], first: Int, after: String): recipesConnection
+  entry(id: ID!): recipes
+}
+
+type recipesConnection {
+  nodes: [recipes!]!
+  pageInfo: PageInfo!
+  applied: AppliedQuery!
+}
+
+type PageInfo { endCursor: String, hasNextPage: Boolean! }
+type AppliedQuery { query: JSON!, queryHash: String! }
+```
+
+- **`entries`** answers a page of drafts. `first` is the page size, 1 to 100 (20 when you leave it out);
+  `after` takes the previous page's `pageInfo.endCursor`. `where` and `orderBy` exist only when the content
+  type has a filterable field ([below](#filter-and-sort)).
+- **`entry(id:)`** reads one draft. It is `null` when there is no such entry, when your role can't read it,
+  and when the id isn't a UUID: the three look the same.
+- **`applied`** is the query that ran, as the canonical JSON document `POST …/entries/query` takes, and its
+  hash. The same document sent to the REST route answers the same `query_hash`.
+
+### Node fields
+
+Each content type is an object type named after its address name (`recipes`). A hyphen or any other
+character GraphQL doesn't allow becomes `_`, a name starting with a digit gains a leading `_`, and a name
+GraphQL keeps for itself (`Query`, `type`, `input` and so on) gains `Entry`. Every node has these fields, which
+are the management API's draft fields in camelCase:
+
+| Field | Type | What it is |
+|---|---|---|
+| `id` | `ID!` | The entry's id |
+| `collection` | `String!` | Its content type's address name |
+| `revisionId` | `ID` | The current draft revision |
+| `title` | `String` | The draft's title; empty when your role can't read the field it comes from |
+| `hiddenFields` | `[String!]` | Fields your role can't read, left out of the answer; `[]` when you read them all |
+| `published` | `Publication` | `{ revisionId generation }` of the live revision, or `null` if the entry isn't published |
+| `locale` | `String` | Its language tag, or `null` |
+| `createdAt`, `updatedAt` | `String` | RFC 3339 times |
+| `createdBy` | `ID!` | Who made the entry |
+| `content` | `JSON` | Every field you may read, as one JSON object |
+
+Then each content field is a field of its own, typed by its kind:
+
+| Field kind | GraphQL type |
+|---|---|
+| Number | `Float` (so `45` comes back as `45.0`) |
+| Yes or no | `Boolean` |
+| Rich text, JSON, group, list, blocks | `JSON`: the stored value as it is |
+| Many uploads, many linked entries | `[String!]`: their ids |
+| One linked entry | The target content type's object type, or `ID` if your role can't read the target |
+| Everything else (text, choice, dates and times, email, web address, URL name, colour, one upload) | `String` |
+
+A content field whose id is one of the node field names above (a field called `title`, say) keeps working
+under the name `field_title`, so neither hides the other.
+
+Here is the Lemon tart by id, with every node field and its content:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ entry(id: \"01a1ee81-13ee-70ff-9989-321e046286f8\") { id title dish minutes method published { revisionId generation } createdAt updatedAt createdBy hiddenFields locale revisionId collection } }"}'
+```
+
+<details>
+<summary>Response: one draft</summary>
+
+```json
+{
+  "data": {
+    "entry": {
+      "id": "01a1ee81-13ee-70ff-9989-321e046286f8",
+      "title": "Lemon tart",
+      "dish": "Lemon tart",
+      "minutes": 45.0,
+      "method": {
+        "doc": {
+          "content": [
+            {
+              "content": [
+                {
+                  "text": "Blind-bake the pastry, then fill it with lemon curd and bake until just set.",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "type": "doc"
+        },
+        "schema": "colophon/rich-text",
+        "version": 1
+      },
+      "published": {
+        "revisionId": "01a1ee81-143c-7776-99d8-ece782907784",
+        "generation": 1
+      },
+      "createdAt": "2026-11-18T11:53:19.083162Z",
+      "updatedAt": "2026-11-18T11:53:19.160733Z",
+      "createdBy": "01a1ee81-12ca-7536-9917-c29fb332ce0e",
+      "hiddenFields": [],
+      "locale": null,
+      "revisionId": "01a1ee81-143c-7776-99d8-ece782907784",
+      "collection": "recipes"
+    }
+  }
+}
+```
+
+</details>
+
+The content fields you select become the document's `fields`, so the server reads only those. `content`
+holds the same narrowed set: on its own it returns every field your role may read (numbers as stored, `45`),
+but next to `dish` it holds only `{"dish": …}`.
+
+## Filter and sort
+
+`where` and `orderBy` can only name **filterable** fields: those marked `"index": true` in the content type,
+as the delivery API's [Filter and sort](/api/delivery/#filter-and-sort) explains. The arguments are built from
+those fields, so on a content type with none, `entries` has no `where` or `orderBy` at all. In the quick
+start's `recipes`, nothing is filterable yet:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ entries(where: {minutes: {lte: 30}}) { nodes { dish } } }"}'
+```
+
+```json
+{"data":null,"errors":[{"message":"Unknown argument \"where\" on field \"entries\" of type \"Query\".","locations":[{"line":1,"column":11}]}]}
+```
+
+Mark `minutes` filterable with the `PUT …/content-types/recipes` shown on the [Delivery
+API](/api/delivery/#filter-and-sort) page. The schema then gains these inputs:
+
+```graphql
+input recipesFilter { minutes: recipesFilter_minutes }
+input recipesFilter_minutes { eq: Float, in: [Float!], lt: Float, lte: Float, gt: Float, gte: Float }
+input recipesSort { field: recipesOrderable!, dir: SortDirection = ASC }
+enum recipesOrderable { minutes }
+enum SortDirection { ASC DESC }
+```
+
+Each operator inside `where` is one filter, and every filter must match. The operators a field offers follow
+its kind, as in the query document: `eq` and `in` on every filterable field; `lt`, `lte`, `gt`, `gte` also on
+text, numbers, dates, times and URL names; `contains` on single-line text. The query document's own limits
+still apply: at most 8 filters, 4 sort keys and 100 values in an `in`. The entry id breaks ties in the sort,
+so paging is stable.
+
+With two more draft recipes saved (Ginger biscuits, 18 minutes; Flapjacks, 25), ask for those that take 30
+minutes or less, quickest first, one to a page. Variables work as in any GraphQL server:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "query Quick($most: Float) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1) { nodes { id title minutes published { generation } } pageInfo { endCursor hasNextPage } applied { query queryHash } } }",
+    "operationName": "Quick",
+    "variables": { "most": 30 }
+  }'
+```
+
+<details>
+<summary>Response: the first page, and a cursor for the next</summary>
+
+```json
+{
+  "data": {
+    "entries": {
+      "nodes": [
+        {
+          "id": "01a1ee84-8d1c-760a-82a7-f39ca86a9e1b",
+          "title": "Ginger biscuits",
+          "minutes": 18.0,
+          "published": null
+        }
+      ],
+      "pageInfo": {
+        "endCursor": "djE6NmY4YzZjOWQzYzhkODI4ZGMxYWQ2NmY5MTkwNjcyYWQyYzJhM2M1NzY4MmVlMTUzYmY0MTAwNWQwZGM3NGRiNjpbMTgsIjAxYTFlZTg0LThkMWMtNzYwYS04MmE3LWYzOWNhODZhOWUxYiJd",
+        "hasNextPage": true
+      },
+      "applied": {
+        "query": {
+          "depth": 0,
+          "fields": [
+            "minutes"
+          ],
+          "filters": [
+            {
+              "field": "minutes",
+              "op": "lte",
+              "value": 30
+            }
+          ],
+          "limit": 1,
+          "sort": [
+            {
+              "dir": "asc",
+              "field": "minutes"
+            }
+          ]
+        },
+        "queryHash": "sha256:6f8c6c9d3c8d828dc1ad66f9190672ad2c2a3c57682ee153bf41005d0dc74db6"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+`published` is `null`: Ginger biscuits is a draft that was never published, which the delivery API would never
+show. `applied.query` is the document `POST …/entries/query` takes; sending it there returns the same
+`query_hash`, `sha256:6f8c6c9d…`.
+
+**The next page.** Pass `endCursor` back as `after`, with the same `where`, `orderBy` and `first`:
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "query Quick($most: Float, $after: String) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1, after: $after) { nodes { title minutes } pageInfo { endCursor hasNextPage } } }",
+    "variables": { "most": 30, "after": "djE6NmY4YzZjOWQzYzhkODI4ZGMxYWQ2NmY5MTkwNjcyYWQyYzJhM2M1NzY4MmVlMTUzYmY0MTAwNWQwZGM3NGRiNjpbMTgsIjAxYTFlZTg0LThkMWMtNzYwYS04MmE3LWYzOWNhODZhOWUxYiJd" }
+  }'
+```
+
+```json
+{"data":{"entries":{"nodes":[{"title":"Flapjacks","minutes":25.0}],"pageInfo":{"endCursor":null,"hasNextPage":false}}}}
+```
+
+A cursor belongs to the query that made it. With a different query it is refused with `foreign_cursor`
+([errors below](#errors)).
+
+A filter or sort on a field your role can't read is refused with `field_not_readable`, so a query can't learn
+a hidden field's values by sorting on it.
+
+## Linked entries
+
+A field that links to one entry (a single reference) resolves to the target's own object type, so you can
+select its fields in place. Selecting only `id` or `collection` costs nothing: those are stored in the link
+itself. Selecting anything more reads the linked entry, which costs one level of the document's `depth`, and
+a link inside that link costs another. For a content type with an `author` field linking to `staff`, whose
+own `mentor` field links to `staff` again:
+
+```graphql
+{
+  entries {
+    nodes {
+      title
+      author {            # depth 1: reads the linked staff entry
+        name
+        mentor { id }     # still depth 1: the id is in the link
+      }
+    }
+  }
+}
+```
+
+Two levels are the most: `author { mentor { name } }` is depth 2, and a third level is refused with
+`out_of_range` at `/depth`. A linked entry your role can't read at all is typed `ID` and answers just its id.
+Fields that link to many entries answer a list of ids; read those entries with `entry(id:)` or a second
+query.
+
+## Bounds
+
+The first five bounds are checked on the document's text before anything is read, and answered in the [error
+envelope](/api/errors/) with `422 validation_failed`; the last two are checked as the query runs and come back
+as GraphQL errors.
+
+| Bound | Limit | `reason` / `extensions.code` |
+|---|---|---|
+| Length of `query` | 8,192 characters | `too_large` (envelope) |
+| Nesting of selections, with every fragment expanded | 16 levels | `too_deep` (envelope) |
+| Brackets `{ [ (` nested in the raw text | 64 levels | `too_deep` (envelope) |
+| Fields selected, with every fragment expanded | 512 | `too_complex` (envelope) |
+| Fragments that spread one another in a cycle | none allowed | `fragment_cycle` (envelope) |
+| `entries` and `entry` calls in one request, aliases counted | 8 | `too_many` (GraphQL error) |
+| Fields selected inside one `nodes` or `entry`, aliases counted | 128 | `too_many` (GraphQL error) |
+
+A full introspection query fits comfortably inside these. Here is a document that selects 600 fields:
+
+```http
+HTTP/1.1 422 Unprocessable Entity
+content-type: application/json
+x-request-id: 01a1ee84-e7aa-720c-955b-3347a3081ae3
+content-length: 214
+date: Wed, 18 Nov 2026 11:57:29 GMT
+
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "a document selects at most 512 fields, fragments expanded",
+    "details": {
+      "reason": "too_complex",
+      "pointer": "/query"
+    },
+    "request_id": "01a1ee84-e7aa-720c-955b-3347a3081ae3"
+  }
+}
+```
+
+And one with nine aliased `entries` calls (`r0: entries(first: 1) { … } r1: …`). The first eight run; the
+ninth is refused:
+
+```json
+{
+  "data": {
+    "r0": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r1": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r2": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r3": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r4": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r5": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r6": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] },
+    "r7": { "nodes": [{ "id": "01a1ee81-13ee-70ff-9989-321e046286f8" }] }
+  },
+  "errors": [
+    {
+      "message": "a request runs at most 8 root reads",
+      "locations": [{ "line": 1, "column": 315 }],
+      "extensions": { "code": "too_many", "pointer": "" }
+    }
+  ]
+}
+```
+
+## Errors
+
+A GraphQL request can fail in two places, and the answer looks different in each.
+
+**Before the document runs**, the route answers like every other route: an HTTP error status and the
+[error envelope](/api/errors/). That covers a missing or bad credential (`401`), a role that can't read the
+content type (`403 missing_permission`), a content type that doesn't exist (`404 not_found`), a body that
+isn't the GraphQL request (`400 malformed_json`, `415 unsupported_media_type`), `variables` that isn't an
+object (`422` with `wrong_type`), the bounds checked on the document, and [rate limits](/api/rate-limits/)
+(`429`).
+
+**Once the document runs**, the status is `200 OK` and problems are GraphQL errors in `errors`. Syntax and
+schema errors (an unknown field or argument) carry only `message` and `locations`. A refusal from Colophon
+also carries `extensions.code` and `extensions.pointer`: the same `details.reason` and `details.pointer` the
+REST route would answer, so a client can branch on the same values. Asking for more than 100 at a time:
+
+```sh
+curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ entries(first: 500) { nodes { title } } }"}'
+```
+
+```http
+HTTP/1.1 200 OK
+content-type: application/json
+x-request-id: 01a1ee85-64b3-741d-b2cb-a6a313705c39
+content-length: 170
+date: Wed, 18 Nov 2026 11:58:01 GMT
+
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "`limit` is a whole number from 1 to 100",
+      "locations": [{ "line": 1, "column": 3 }],
+      "extensions": { "code": "out_of_range", "pointer": "/limit" }
+    }
+  ]
+}
+```
+
+`first` became the document's `limit`, so the pointer names `/limit`. A cursor from another query:
+
+```json
+{"data":null,"errors":[{"message":"this cursor is not valid for this query","locations":[{"line":1,"column":3}],"extensions":{"code":"foreign_cursor","pointer":""}}]}
+```
+
+Always check `errors`, even on a `200`.
+
+## What it doesn't do
+
+- **No writes.** There are no mutations and no subscriptions; a `mutation` is answered "Schema is not
+  configured for mutations." Write through the [management API](/api/management/).
+- **No published content.** GraphQL reads drafts. Published content, pinned releases and the cache headers a
+  CDN needs are on the [delivery API](/api/delivery/), which is REST only.
+- **One content type per endpoint.** `entries` and `entry` read the content type in the path. Linked entries
+  can be read through their links, up to two levels.
+
+## Introspection
+
+Introspection is on, so GraphQL tools (GraphiQL, code generators, editor plugins) can be pointed at the
+endpoint with the `Authorization` header. The schema shows exactly what the caller may read: the content type
+in the path and the content types its links reach. The schema is rebuilt on every request, so a field made
+filterable appears in `where` and `orderBy` at once.
+
+```sh
+curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ __type(name: \"Query\") { fields { name args { name } } } }"}'
+```

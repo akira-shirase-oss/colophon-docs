@@ -34,6 +34,7 @@ what you see is what the current `main` branch answers.
    git clone https://github.com/akira-shirase-oss/colophon-cms.git
    cd colophon-cms
    docker build -f deploy/image/Dockerfile \
+     --build-arg COLOPHON_COMMIT="$(git rev-parse HEAD)" \
      --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
      -t colophon:local .
    cd deploy/quickstart
@@ -46,9 +47,11 @@ what you see is what the current `main` branch answers.
    cache) and Garage (storage for uploads) run beside Colophon, but only Colophon's port is
    published, and only on `127.0.0.1`.
 
-   :::caution[Pass `SOURCE_DATE_EPOCH`]
-   The image's build stamps its date from `SOURCE_DATE_EPOCH`. Without the `--build-arg`, the
-   variable is set but empty and the build stops while compiling the memory allocator.
+   :::caution[Pass both build arguments]
+   Every Colophon binary reports the commit and the day it was built from, and the image's build
+   takes them from `COLOPHON_COMMIT` and `SOURCE_DATE_EPOCH`. Without the two `--build-arg`s the
+   build stops: it refuses to stamp an unknown commit, and an empty date stops the memory
+   allocator's compile.
    :::
 
    Every later command in this guide runs in this folder, `colophon-cms/deploy/quickstart`.

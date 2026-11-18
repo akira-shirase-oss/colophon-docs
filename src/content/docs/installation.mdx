@@ -33,6 +33,7 @@ releases exist, each will carry a `compose.yaml` that pins its image, and prebui
 git clone https://github.com/akira-shirase-oss/colophon-cms.git
 cd colophon-cms
 docker build -f deploy/image/Dockerfile \
+  --build-arg COLOPHON_COMMIT="$(git rev-parse HEAD)" \
   --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
   -t colophon:local .
 cd deploy/quickstart
@@ -195,6 +196,7 @@ the new Colophon starts:
 ```sh
 cd colophon-cms && git pull
 docker build -f deploy/image/Dockerfile \
+  --build-arg COLOPHON_COMMIT="$(git rev-parse HEAD)" \
   --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
   -t colophon:local .
 cd deploy/quickstart && docker compose up -d --wait

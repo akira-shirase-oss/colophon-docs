@@ -68,6 +68,7 @@ Cloudflare Pages, project `colophon-docs`:
 ```sh
 npm run build
 npx -y wrangler@4.148.0 pages deploy dist --project-name colophon-docs --branch main
+npm run check:live -- https://docs.colophon.404human.dev   # search, the reference, no sideways scroll
 ```
 
 ## Licence
