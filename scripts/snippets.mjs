@@ -3,6 +3,8 @@
 // pages show. The examples live in the MDX itself:
 //
 //   ```sh run=quickstart                  a command, run in order in one bash session per suite
+//   ```sh run=cli exit=1                  a command the page shows failing: it must end with that status
+//   ```sh run=cli stderr=1                its standard error is part of its output (an `error:` line)
 //   ```http output=quickstart             what the command before it prints; compared after
 //                                          normalising ids, times, secrets and hashes
 //   ```js title="x.mjs" run=quickstart file=x.mjs   written to x.mjs in the current directory
@@ -19,6 +21,12 @@
 //                                                   against a Colophon already running elsewhere
 //   node scripts/snippets.mjs --update ...          write what ran into the pages' output blocks
 //   node scripts/snippets.mjs --list                print the steps without running them
+//   node scripts/snippets.mjs --coverage            count every code block: run, an output that is
+//                                                   checked, or `not-run="reason"`; fails on any
+//                                                   block that is none of these
+//
+// A block that can't run here (a systemd unit, a Cloudflare step, a shape rather than a command)
+// says so in its info string, `not-run="why"`, so the gap is counted and visible, never silent.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -28,7 +36,7 @@ const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const DOCS = join(ROOT, 'src/content/docs');
 const DEFAULT_BASE = 'http://localhost:8080';
 /** Suites in the order they run; later suites build on the state earlier ones leave. */
-const SUITES = ['quickstart', 'tokens', 'management', 'delivery'];
+const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'cli'];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -54,7 +62,8 @@ function mdxFiles(dir) {
 
 const FENCE = /^(\s*)(`{3,})([\w-]*)([^\n]*)\n([\s\S]*?)\n\1\2[ \t]*$/gm;
 const COMMENT = /\{\/\*\s*snippet\s+([\w-]+):\s*(\S+)((?:\s+[^\s*]\S*)*)\s*\*\/\}/g;
-const meta = (text, key) => text.match(new RegExp(`\\b${key}=("([^"]*)"|\\S+)`))?.[2] ?? text.match(new RegExp(`\\b${key}=(\\S+)`))?.[1];
+// A key starts the info string or follows a space, so `run=` never matches inside `not-run=`.
+const meta = (text, key) => text.match(new RegExp(`(?:^|\\s)${key}=("([^"]*)"|\\S+)`))?.[2] ?? text.match(new RegExp(`(?:^|\\s)${key}=(\\S+)`))?.[1];
 
 /** Every step of every suite, in document order. */
 function readSteps() {
@@ -145,6 +154,7 @@ export function normalise(text) {
 		.replace(/^colophon-cache: \w+$/gim, 'colophon-cache: <state>')
 		.replace(/^retry-after: \d+$/gim, 'retry-after: <seconds>')
 		.replace(/\b[0-9A-Z]{5}(-[0-9A-Z]{5}){3}\b/g, '<setup-code>')
+		.replace(/\(commit [^,)]+, built \d{4}-\d\d-\d\d\)/g, '(commit <commit>, built <day>)')
 		.replace(/[ \t]+$/gm, '');
 	return all.trim();
 }
@@ -155,7 +165,9 @@ function runAll(steps) {
 	const dir = join(ROOT, '.snippets', 'run');
 	mkdirSync(dir, { recursive: true });
 	mkdirSync(workdir, { recursive: true });
-	const lines = ['set -euo pipefail', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`];
+	// Aliases work as in an interactive shell (the CLI page defines one), so each block is sourced
+	// from its own file: a later line sees what an earlier one defined.
+	const lines = ['set -euo pipefail', 'shopt -s expand_aliases', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`];
 	steps.forEach((step, index) => {
 		const out = join(dir, `${index}.out`);
 		const marker = `echo "=== step ${index}: ${relative(ROOT, step.file)}" >&2`;
@@ -176,7 +188,24 @@ function runAll(steps) {
 			lines.push(`echo "=== step ${index}: skipped (${meta(step.info, 'step')})" >&2`);
 			return;
 		}
-		lines.push(marker, `{\n${code}\n} > ${JSON.stringify(out)}`);
+		const source = join(dir, `${index}.sh`);
+		writeFileSync(source, `${code}\n`);
+		// `exit=N`: a command the page shows failing; it must end with that status. `stderr=1`: what
+		// it prints on standard error is part of its output too (an `error: …` line, a summary).
+		const expected = meta(step.info, 'exit');
+		const streams = meta(step.info, 'stderr') === '1' ? ' 2>&1' : '';
+		if (expected === undefined) {
+			lines.push(marker, `source ${JSON.stringify(source)} > ${JSON.stringify(out)}${streams}`);
+		} else {
+			lines.push(
+				marker,
+				'set +e',
+				`source ${JSON.stringify(source)} > ${JSON.stringify(out)}${streams}`,
+				'__status=$?',
+				'set -e',
+				`[[ $__status == ${Number(expected)} ]] || { echo "step ${index}: exit $__status, the page says ${Number(expected)}" >&2; cat ${JSON.stringify(out)} >&2; exit 1; }`,
+			);
+		}
 	});
 	const script = join(dir, 'suite.sh');
 	writeFileSync(script, `${lines.join('\n')}\n`);
@@ -201,7 +230,8 @@ function runAll(steps) {
 function update(steps) {
 	const byFile = new Map();
 	for (const step of steps) {
-		if (step.kind === 'run' && step.expect && step.actual !== undefined) {
+		// Only blocks whose output really differs are rewritten, so ids and dates don't churn.
+		if (step.kind === 'run' && step.expect && step.actual !== undefined && normalise(step.actual) !== normalise(step.expect.code)) {
 			const list = byFile.get(step.file) ?? [];
 			list.push(step.expect.end === undefined ? null : step);
 			byFile.set(step.file, list);
@@ -225,9 +255,41 @@ function update(steps) {
 
 // ---------------------------------------------------------------- main
 
+// ---------------------------------------------------------------- coverage
+
+/** Every fenced block on every page, by what happens to it. */
+export function coverage() {
+	const pages = [];
+	for (const file of mdxFiles(DOCS)) {
+		const text = readFileSync(file, 'utf8');
+		const page = { file: relative(DOCS, file), run: 0, output: 0, notRun: 0, unmarked: [] };
+		for (const match of text.matchAll(FENCE)) {
+			const info = match[4];
+			if (meta(info, 'run')) page.run++;
+			else if (meta(info, 'output')) page.output++;
+			else if (meta(info, 'not-run')) page.notRun++;
+			else page.unmarked.push(text.slice(0, match.index).split('\n').length);
+		}
+		if (page.run + page.output + page.notRun + page.unmarked.length > 0) pages.push(page);
+	}
+	return pages;
+}
+
+function printCoverage() {
+	const pages = coverage();
+	const sum = (key) => pages.reduce((total, page) => total + (Array.isArray(page[key]) ? page[key].length : page[key]), 0);
+	for (const page of pages) {
+		console.log(`${page.file.padEnd(36)} run ${String(page.run).padStart(3)}  output ${String(page.output).padStart(3)}  not-run ${String(page.notRun).padStart(3)}${page.unmarked.length ? `  UNMARKED at lines ${page.unmarked.join(', ')}` : ''}`);
+	}
+	const all = sum('run') + sum('output') + sum('notRun') + sum('unmarked');
+	console.log(`snippets coverage: ${all} blocks; ${sum('run')} run, ${sum('output')} outputs checked, ${sum('notRun')} not run (with a reason), ${sum('unmarked')} unmarked`);
+	process.exit(sum('unmarked') > 0 ? 1 : 0);
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main();
 
 function main() {
+if (flag('coverage')) printCoverage();
 const steps = readSteps();
 const suites = SUITES.filter((name) => (only ? name === only : true)).map((name) => [name, steps.filter((step) => step.suite === name)]);
 if (flag('list')) {
