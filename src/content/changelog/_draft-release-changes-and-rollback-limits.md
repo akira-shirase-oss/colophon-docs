@@ -25,4 +25,4 @@ Pass `next_cursor` back as `cursor` until it is `null`. A release that changed t
 
 A `{generation}` that isn't a positive whole number now gets the usual error envelope: `404` on release reads and `422 invalid_generation` on rollbacks.
 
-Reading what was live at a past release no longer scans publication history: it uses two index ranges, so a rollback's preview costs about the same however long the history is.
+Reading what was live at a past release no longer scans publication history: it uses two index ranges, so the cost of a rollback's preview no longer grows with the length of the history.
