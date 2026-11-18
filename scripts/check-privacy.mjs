@@ -7,6 +7,7 @@
 //   - nothing else (telemetry, fonts, AI) was contacted.
 //
 //   node scripts/check-privacy.mjs --base http://127.0.0.1:4321 [--stub-port 58152]
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 
@@ -61,7 +62,19 @@ current = '/api/reference/ (try-it)';
 await page.route(`${base}/api/reference/`, async (route) => {
 	const response = await route.fetch();
 	const body = (await response.text()).replaceAll('http://localhost:8080', stub);
-	await route.fulfill({ response, body });
+	// The page's inline scripts are allowed by hash, so the edited one needs its new hash: the policy
+	// stays enforced, with exactly this page's scripts allowed.
+	const headers = { ...response.headers() };
+	const policy = headers['content-security-policy'];
+	if (policy) {
+		const hashes = [...body.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(
+			([, script]) => `'sha256-${createHash('sha256').update(script).digest('base64')}'`,
+		);
+		headers['content-security-policy'] = policy.replace(/script-src [^;]*/, (directive) =>
+			directive.includes("'sha256-") ? `${directive.replace(/ 'sha256-[^']+'/g, '')} ${hashes.join(' ')}` : directive,
+		);
+	}
+	await route.fulfill({ response, body, headers });
 });
 await page.goto(`${base}/api/reference/`, { waitUntil: 'networkidle' });
 const testButton = page.locator('button:has-text("Test Request")').first();
