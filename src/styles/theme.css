@@ -195,6 +195,11 @@ h1#_top,
 	outline: 2px solid var(--sl-color-accent);
 	outline-offset: 2px;
 }
+/* A code block takes focus so it can be scrolled from the keyboard (src/lib/focusable-code.mjs). */
+.expressive-code pre:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: -2px;
+}
 
 /* The sidebar's current page: a thin rule instead of a filled block */
 nav.sidebar a[aria-current='page'] {
