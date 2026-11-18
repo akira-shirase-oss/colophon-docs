@@ -35,6 +35,7 @@ npm run dev                    # http://localhost:4321
 npm run build                  # the site in dist/, checked
 npm run sync:openapi           # copy the OpenAPI document from colophon-cms main
 npm test                       # the snippet runner's own tests
+scripts/check.sh               # the gate before every push: scripts/check.sh && git push
 ```
 
 Running the examples needs Docker, `curl` and `jq`. With nothing on port 8080:
