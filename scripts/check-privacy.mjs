@@ -57,11 +57,15 @@ for (const path of paths) {
 	await page.goto(base + path, { waitUntil: 'networkidle' });
 }
 
-// Try-it on the reference, pointed at the stub.
+// Try-it on the reference: first at the local stub, then at a remote https server, which is where a
+// proxy would show (a client may skip its proxy for local addresses only). The remote one is answered
+// inside the browser, so nothing leaves this machine; the request log shows where it was addressed.
+const remote = 'https://cms.example.com';
+let target = stub;
 current = '/api/reference/ (try-it)';
 await page.route(`${base}/api/reference/`, async (route) => {
 	const response = await route.fetch();
-	const body = (await response.text()).replaceAll('http://localhost:8080', stub);
+	const body = (await response.text()).replaceAll('http://localhost:8080', target);
 	// The page's inline scripts are allowed by hash, so the edited one needs its new hash: the policy
 	// stays enforced, with exactly this page's scripts allowed.
 	const headers = { ...response.headers() };
@@ -76,18 +80,20 @@ await page.route(`${base}/api/reference/`, async (route) => {
 	}
 	await route.fulfill({ response, body, headers });
 });
-await page.goto(`${base}/api/reference/`, { waitUntil: 'networkidle' });
-const testButton = page.locator('button:has-text("Test Request")').first();
-await testButton.scrollIntoViewIfNeeded();
-await testButton.click();
-const client = page.locator('.scalar-client, [role="dialog"]').last();
-await client.waitFor();
-// The token field of the bearer scheme.
-const tokenField = client.getByPlaceholder(/token/i).first();
-await tokenField.fill(token);
-await page.waitForTimeout(300);
-await client.getByRole('button', { name: /^Send/i }).first().click();
-await page.waitForTimeout(2500);
+async function tryIt() {
+	await page.goto(`${base}/api/reference/`, { waitUntil: 'networkidle' });
+	const testButton = page.locator('button:has-text("Test Request")').first();
+	await testButton.scrollIntoViewIfNeeded();
+	await testButton.click();
+	const client = page.locator('.scalar-client, [role="dialog"]').last();
+	await client.waitFor();
+	// The token field of the bearer scheme.
+	await client.getByPlaceholder(/token/i).first().fill(token);
+	await page.waitForTimeout(300);
+	await client.getByRole('button', { name: /^Send/i }).first().click();
+	await page.waitForTimeout(2500);
+}
+await tryIt();
 // The browser's own network log is the proof of where the request went (the stub may not see it if
 // the browser refuses the cross-origin answer first).
 const hit = sentToStub.find((r) => r.authorization === `Bearer ${token}`);
@@ -102,15 +108,33 @@ const before = await storageHolds();
 await page.reload({ waitUntil: 'networkidle' });
 const after = await storageHolds();
 if (after.local || after.session) problems.push(`the token is in ${after.local ? 'localStorage' : 'sessionStorage'} after a reload`);
+
+// The remote server. Anything else off this site is refused before it leaves the browser.
+const sentToRemote = [];
+page.on('request', (request) => {
+	if (request.url().startsWith(remote)) sentToRemote.push({ url: request.url(), authorization: request.headers().authorization ?? null });
+});
+await page.route(/^https?:\/\//, async (route) => {
+	const url = route.request().url();
+	if (url.startsWith(base)) return route.fallback();
+	if (url.startsWith(remote))
+		return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"status":"ok"}' });
+	return route.abort();
+});
+target = remote;
+current = '/api/reference/ (try-it, remote)';
+await tryIt();
+if (!sentToRemote.some((r) => r.authorization === `Bearer ${token}`))
+	problems.push(`try-it did not send the token straight to ${remote} (browser sent ${JSON.stringify(sentToRemote)})`);
 await browser.close();
 server.close();
 
-const own = new Set([new URL(base).host, `127.0.0.1:${stubPort}`]);
+const own = new Set([new URL(base).host, `127.0.0.1:${stubPort}`, new URL(remote).host]);
 const foreign = [...hosts].filter(([host]) => !own.has(host));
 for (const [host, on] of foreign) problems.push(`${host} contacted from ${[...on].slice(0, 3).join(', ')}`);
 
 console.log(`check-privacy: ${paths.length} pages; hosts contacted: ${[...hosts.keys()].join(', ')}`);
-console.log(`  try-it: browser sent ${sentToStub.length} request(s) to the configured server (${sentToStub.map((r) => `${r.method} ${new URL(r.url).pathname}`).join(', ')}), the stub received ${received.length}; token in storage before reload ${JSON.stringify(before)}, after ${JSON.stringify(after)}`);
+console.log(`  try-it: browser sent ${sentToStub.length} request(s) to the configured server (${sentToStub.map((r) => `${r.method} ${new URL(r.url).pathname}`).join(', ')}), the stub received ${received.length}; token in storage before reload ${JSON.stringify(before)}, after ${JSON.stringify(after)}; to ${remote}: ${sentToRemote.length} request(s), direct`);
 if (problems.length > 0) {
 	console.error(`check-privacy: ${problems.length} problem(s)\n${problems.map((p) => `  - ${p}`).join('\n')}`);
 	process.exit(1);
