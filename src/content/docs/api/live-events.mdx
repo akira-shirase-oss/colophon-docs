@@ -25,10 +25,21 @@ the first frame of every stream is a cue to read everything again.
 curl -N "http://localhost:8080/content/v1/$PROJECT/production/events"
 ```
 
-`-N` keeps curl from buffering. Here the stream was opened, and a publish request was published two seconds
-later:
+`-N` keeps curl from buffering. To watch one on the quick start, keep a stream open for six seconds in the
+background, publish a recipe in the Studio meanwhile, then look at what arrived:
 
-```http
+```sh run=ops
+curl -sN -i --max-time 6 "http://localhost:8080/content/v1/$PROJECT/production/events" > public-events.txt &
+sleep 1
+```
+
+{/* snippet ops: snippets/publish-entry.sh Parkin */}
+
+```sh run=ops exit=0
+wait; cat public-events.txt
+```
+
+```http output=ops
 HTTP/1.1 200 OK
 content-type: text/event-stream
 cache-control: no-store
@@ -136,7 +147,7 @@ channel you already have) by adding a listener, and reloads or re-renders when t
 When the page and Colophon do share an origin, `EventSource` works as it is, and reconnects by itself when a
 stream ends:
 
-```js
+```js not-run="runs in a browser page served from Colophon's own origin"
 const project = '01a1ee81-136e-7520-8834-f234ae0c0baf';
 const events = new EventSource(`/content/v1/${project}/production/events`);
 
@@ -165,15 +176,24 @@ The signed-in stream is for tools that show drafts and editorial work: it says w
 for entries, comments and tasks, in which content type. Any credential that may read the project's
 environment can open it, an API token included:
 
-```sh
+```sh not-run="keeps the stream open until you stop it; the six-second version below runs in CI"
 curl -N "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
-Here the stream was opened, a draft recipe was saved two seconds later, and the stream was left open for
-another 16 seconds:
+Here the stream is kept open for six seconds while a draft recipe is saved through the API:
 
-```http
+```sh run=ops exit=0
+curl -sN -i --max-time 6 "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" > signed-in-events.txt &
+sleep 1
+curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" -d '{"dish": "Rock cakes", "minutes": 20}'
+wait; cat signed-in-events.txt
+```
+
+```http output=ops
 HTTP/1.1 200 OK
 content-type: text/event-stream
 cache-control: no-cache
@@ -195,9 +215,21 @@ data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
 
 ```
 
-And with a publish instead of a save, the same stream carried:
+And with a publish instead of a save (a recipe published in the Studio), the same stream carries:
 
-```text not-run="todo: events read from a stream"
+```sh run=ops
+curl -sN --max-time 6 "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+  -H "Authorization: Bearer $COLOPHON_TOKEN" > signed-in-events.txt &
+sleep 1
+```
+
+{/* snippet ops: snippets/publish-entry.sh Gingerbread */}
+
+```sh run=ops exit=0
+wait; cat signed-in-events.txt; rm -f signed-in-events.txt public-events.txt
+```
+
+```text output=ops
 event: change
 data: {"e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"releases"}
 

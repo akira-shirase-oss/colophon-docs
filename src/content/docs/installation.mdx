@@ -94,7 +94,7 @@ responses.
 
 ### Stop, start and remove
 
-```sh not-run="todo: stops and starts the stack"
+```sh not-run="four separate commands, the last of which removes everything; the restore drill on the Backups page runs stop, up --wait and down --volumes in CI"
 docker compose stop            # stop, keeping everything
 docker compose up -d --wait    # start again
 docker compose down            # remove the containers; content stays in the volumes

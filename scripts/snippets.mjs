@@ -61,7 +61,11 @@ function mdxFiles(dir) {
 		.sort();
 }
 
-const FENCE = /^(\s*)(`{3,})([\w-]*)([^\n]*)\n([\s\S]*?)\n\1\2[ \t]*$/gm;
+// The indent is spaces and tabs only: `\s` would let a match start on the blank line before a fence and
+// then look for a closing fence after a blank line too, swallowing the blocks in between.
+const FENCE = /^([ \t]*)(`{3,})([\w-]*)([^\n]*)\n([\s\S]*?)\n\1\2[ \t]*$/gm;
+/** Every fenced block in a page's text: `[indent, fence, lang, info, body]` per match. */
+export const fences = (text) => [...text.matchAll(FENCE)];
 const COMMENT = /\{\/\*\s*snippet\s+([\w-]+):\s*(\S+)((?:\s+[^\s*]\S*)*)\s*\*\/\}/g;
 // A key starts the info string or follows a space, so `run=` never matches inside `not-run=`.
 const meta = (text, key) => text.match(new RegExp(`(?:^|\\s)${key}=("([^"]*)"|\\S+)`))?.[2] ?? text.match(new RegExp(`(?:^|\\s)${key}=(\\S+)`))?.[1];
