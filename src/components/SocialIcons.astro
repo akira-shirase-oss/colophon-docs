@@ -1,0 +1,26 @@
+---
+/**
+ * The header's links out: "Colophon home" (the product's own site, as text, so it reads as a
+ * place to go rather than an icon to guess at), then Starlight's social icons (GitHub). Starlight
+ * renders this in the header on wide screens and in the menu on a phone.
+ */
+import Default from '@astrojs/starlight/components/SocialIcons.astro';
+import { LANDING } from '../lib/landing';
+---
+
+<a class="home-link" href={LANDING}>Colophon home</a>
+<Default />
+
+<style>
+	.home-link {
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+		white-space: nowrap;
+		padding: 0.25rem 0.125rem;
+		border-radius: 0.25rem;
+	}
+	.home-link:hover {
+		color: var(--sl-color-white);
+	}
+</style>

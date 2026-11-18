@@ -5,6 +5,7 @@
  * GitHub rather than pretending to record a vote.
  */
 import Default from '@astrojs/starlight/components/Footer.astro';
+import { LANDING } from '../lib/landing';
 
 const route = Astro.locals.starlightRoute;
 const title = route.entry?.data?.title ?? 'this page';
@@ -28,6 +29,7 @@ const issue = (verdict: 'helpful' | 'not helpful') => {
 	<p class="helpful-note">Either answer opens a short issue on GitHub, so you can say what worked or what was missing.</p>
 </div>
 <Default />
+<p class="home-line not-content"><a href={LANDING}>Colophon home</a> · the product, its blog and how to try it.</p>
 
 <style>
 	.helpful {
@@ -66,6 +68,11 @@ const issue = (verdict: 'helpful' | 'not helpful') => {
 	.helpful-note {
 		grid-column: 1 / -1;
 		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+	}
+	.home-line {
+		margin-top: 1.5rem;
+		font-size: var(--sl-text-sm);
 		color: var(--sl-color-gray-3);
 	}
 	@media (max-width: 30rem) {
