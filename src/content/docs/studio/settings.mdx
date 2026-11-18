@@ -56,7 +56,8 @@ request. Changing them needs a role that may change content types (Owner or Deve
 
 A project has at most 20 stages. *Saving replaces the whole list. Removing a stage drops its gate;
 reviews recorded for a stage that keeps its short name still count. Saving an empty list is allowed —
-one approval publishes again.* If someone saved the stages while you were editing, Colophon refuses your
+one approval publishes again.* In the Studio, though, **Save stages** needs at least one stage in the
+list; to clear every stage, replace the list with an empty one through the API. If someone saved the stages while you were editing, Colophon refuses your
 save and offers **Load the latest list**.
 
 How stages work on a publish request, in any order and with **Request changes** holding the whole

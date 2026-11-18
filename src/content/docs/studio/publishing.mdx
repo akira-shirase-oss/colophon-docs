@@ -13,15 +13,16 @@ next **release** when published. This page is for writers, reviewers and whoever
 
 What the editor's side panel offers depends on your role:
 
-- **Publish** (or **Publish changes** for an entry that is already live) when your role may approve
-  and publish, like the built-in **Owner** and **Publisher**. One press makes a publish request for the
+- **Publish** (or **Publish changes** for an entry that is **Live with changes**) when your role may
+  approve and publish, like the built-in **Owner** and **Publisher**. One press makes a publish request for the
   saved version, approves it as your own recorded review and publishes it: *Goes live for readers at
   once, as the next release. Your approval is recorded.*
 - **Ask for review** when your role may edit but not publish, like **Editor** and **Developer**: *Someone
   who can publish approves it and puts it live.*
 
 The button waits for your changes to be saved (*Saving first…*): only a saved version can be
-published.
+published. On a **Live** entry with nothing new to publish there is no publish button; it comes back
+as **Publish changes** as soon as you save a change, including a change made right after publishing.
 
 ![Mina's view of a new entry: Draft, Saved just now, the Ask for review button, and "Someone who can publish approves it and puts it live."](/screens/studio/ask-for-review.webp)
 
@@ -52,7 +53,7 @@ A request is in one of these states:
 | State | Means |
 |---|---|
 | **Not sent for review** | Made, not yet sent. Someone who can edit its entries presses **Ask for review**. |
-| **Waiting for review** | Sent; a reviewer decides. |
+| **In review** | Sent; a reviewer decides. |
 | **Changes asked for** | A reviewer pressed **Request changes**. |
 | **Edited since: update it** | An entry in it was saved again after it was made. |
 | **Approved** | Every approval it needs is in, on exactly these versions. |
@@ -68,7 +69,7 @@ For reviewers: the built-in **Publisher** and **Owner**, or any role that may ap
 1. Open the request. The bar under its title shows the progress: **Prepared**, **Sent for review**,
    **Approved**, **Live**.
 
-2. Read **Entries**. Each is marked **new**, **update** or **unpublish**, and **Changes** shows what
+2. Read **Entries**. Each is marked **New**, **Updated** or **Taken down**, and **Changes** shows what
    readers would get compared with what they have now. **Preview on your site** shows the whole
    request on your website: see [Preview](/studio/preview/#preview-a-publish-request).
 
@@ -79,7 +80,7 @@ For reviewers: the built-in **Publisher** and **Owner**, or any role that may ap
 
 </Steps>
 
-![Kai reviewing Plum crumble: Waiting for review, the progress bar at Sent for review, the entry's changes, the Review stages Editorial and Fact check both Waiting, and the Review panel with Deciding, a comment, Approve this version and Request changes](/screens/studio/publish-request.webp)
+![Kai reviewing Plum crumble: In review, the progress bar at Sent for review, the entry's changes, the Review stages Editorial and Fact check both Waiting, and the Review panel with Deciding, a comment, Approve this version and Request changes](/screens/studio/publish-request.webp)
 
 *You approve exactly the version on this page. If it changes, your approval no longer counts.* When
 someone saves an entry in the request again, the request shows **Edited since: update it** and the
@@ -119,18 +120,20 @@ asked for** or **Approval expired**, and who decided it.
 
 Every publish makes a numbered release, and release numbers only go up. Open **Releases** in the
 sidebar to see them, newest first: each with its title, how many entries it changed or took down, who
-published it, and its label. The card at the bottom of the sidebar names the release that is live now.
+published it and when, and its label. The card at the bottom of the sidebar, **Live now**, names the
+release that is live now.
 
-Press a release for its **receipt**: what happened after it went live.
+Press a release's label for its **receipt**: what happened after it went live. (Its title opens the
+publish request it came from.)
 
-![The receipt of Release 4, Apple cake and Pear tart: published by Akira Shirase, 2 entries changed, the release slider, the Published in Colophon label, and empty Website connections and site checks](/screens/studio/rollback-receipt.webp)
+![The receipt of Release 4, Apple cake and Pear tart: published by Akira Shirase, 2 entries changed, the release slider, the Published badge, and empty Website connections and site checks](/screens/studio/rollback-receipt.webp)
 
 The receipt shows who published it and when, the entries it changed, a slider to step to **Older** and
 **Newer** releases, and one label for how far the release got:
 
 | Label | Means |
 |---|---|
-| **Published in Colophon** | It is live in Colophon, and anything that reads Colophon has it. Nothing has confirmed your website yet. |
+| **Published** | It is live in Colophon, and anything that reads Colophon has it. Nothing has confirmed your website yet. |
 | **Website update pending** | A [website connection](/api/website-connections/) is still delivering it. The label settles by itself. |
 | **Verified at 2 locations** | A site check read this release, or a later one, on your live site, from that many places. |
 | **Needs attention** | A connection gave up. **What needs attention** says which, and what to do next. |

@@ -18,6 +18,8 @@ GET  /content/v1/{project}/{environment}/events                   a live stream:
 Colophon sends no CORS headers on `/content/v1`, so a page served from another origin can't read the delivery
 API from the browser: the browser blocks the answer. Fetch it where your site renders (a server route, a
 static build, an edge function), or serve Colophon under your site's own origin with a reverse proxy.
+Delivery needs no credential, so never put an API token in browser code to read it: anything a page holds,
+its visitors can copy.
 :::
 
 `{project}` is the project's id (a UUID: **Settings** → **General** → **Technical details**), `{environment}`

@@ -67,14 +67,18 @@ Then press **Schedule at this moment**. Changing the time zone clears the questi
 ## When it runs
 
 At the chosen moment Colophon publishes the request as the person who scheduled it, with every check a
-publish makes, on top of whatever is live then. The schedule's history in the panel, and the
-**Scheduled** list on **Releases**, then says how it went:
+publish makes, on top of whatever is live then. The schedule's history in the panel then says how it
+went:
 
 | It says | Means |
 |---|---|
 | *Published on time, as release 12* | Done. |
 | *Published late, as release 12*, marked **delayed** | It started more than a minute after the chosen time, for example because Colophon was stopped then. It still published. |
 | *Not published: …* | It was **blocked**, and published nothing. The reason follows. |
+
+The **Scheduled** list on **Releases** says the same with a status badge: **Scheduled**, **Published ·
+Release 12**, **Published late · Release 12**, **Not published** (with the reason under it) or
+**Cancelled**.
 
 A schedule is blocked, never half-done, when publishing would be refused at that moment: an entry in
 the request was saved again, the approval expired, the person who scheduled it can no longer publish

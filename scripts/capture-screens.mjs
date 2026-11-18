@@ -41,6 +41,20 @@ async function asReaderSeesIt() {
 			if (node.nodeValue?.includes(from)) node.nodeValue = node.nodeValue.replaceAll(from, to);
 		}
 	}, [from, 'localhost:8080']);
+	// No real secret in a published image: a token on screen becomes an obviously fake one of the same length.
+	await page.evaluate(() => {
+		const fake = (secret) => secret.slice(0, 'colophon_api_'.length) + 'EXAMPLEnotARealToken'.repeat(4).slice(0, secret.length - 'colophon_api_'.length);
+		const pattern = /colophon_api_[A-Za-z0-9_-]{16,}/g;
+		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (node.nodeValue?.includes('colophon_api_')) node.nodeValue = node.nodeValue.replace(pattern, fake);
+		}
+		for (const input of document.querySelectorAll('input, textarea')) {
+			if (input.value.includes('colophon_api_')) input.value = input.value.replace(pattern, fake);
+			// The one-time setup code, typed into its field.
+			if (/^[A-Z0-9]{5}(-[A-Z0-9]{5}){3}$/.test(input.value)) input.value = 'EXAMP-LECOD-ENOTR-EAL00';
+		}
+	});
 }
 
 async function shot(name, target) {

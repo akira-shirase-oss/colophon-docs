@@ -18,6 +18,9 @@ It doesn't publish: approving and publishing stay in the Studio or the API, wher
 
 There are no release downloads yet. Use the copy in the quick-start container, or build it from a clone.
 
+**Planned:** prebuilt binaries for macOS, Linux and Windows, an npm package (`@colophon-cms/cli`), an
+install script and a Homebrew formula, published with the first release.
+
 ### In the quick-start container
 
 The image you built in the [quick start](/quick-start/) holds `colophon`. Run it with `docker compose exec`
@@ -75,7 +78,8 @@ cache     up
 database  up
 ```
 
-It exits `0` when the server is ready and `5` when it is degraded, not ready or unreachable:
+It exits `0` when the server is ready and `5` when it is degraded, not ready or unreachable; a `--server`
+that isn't an `http(s)` URL exits `2`, and an answer that isn't a readiness report exits `6`:
 
 ```sh
 colophon doctor --server http://localhost:58000 --json
@@ -152,7 +156,7 @@ Signed out of http://127.0.0.1:8080 (profile default).
 
 ### Where the sign-in is kept
 
-`credentials.json`, readable by its owner only, in the first of:
+`credentials.json`, created readable by its owner only, in the first of:
 
 1. `$COLOPHON_CONFIG_DIR`;
 2. `$XDG_CONFIG_HOME/colophon`;
@@ -165,6 +169,10 @@ It holds one **profile** per name, each with its server, token and expiry. `defa
 colophon login --server https://cms.example.com --profile work
 colophon whoami --profile work
 ```
+
+The token in that file acts as you, with your role, until it expires: treat the file like a password, keep it
+out of repositories and shared folders, and run `colophon logout` on a machine you're done with, so the
+token is revoked rather than left behind.
 
 Commands other than `login` and `doctor` take no `--server`: they use the profile's. The CLI always acts as a
 person. It takes its credential only from `colophon login`; it doesn't read `COLOPHON_TOKEN` and doesn't
@@ -366,10 +374,10 @@ command needs `schema.change` on the project.
 | `migration list` | The plans, newest first | `--collection`; `--state` (`proposed`, `approved`, `running`, `done`, `blocked`, `superseded`, `cancelled`) |
 | `migration show <migration>` | One plan: its target, hash, items and where it stands | |
 | `migration items <migration>` | Its items in entry order | `--outcome` (`ok`, `migrates`, `needs_input`, `blocked`, `resolved`, `applied`, `skipped`); `--limit` (default 50); `--cursor` |
-| `migration approve <migration>` | Approve a proposed plan | `--if-match`, the plan's hash (required) |
-| `migration resolve <migration> <entry>` | Give an item that needs input a document the new definition accepts | `--if-match` (required); `--data` or `--file` |
-| `migration apply <migration>` | Start an approved plan | `--if-match` (required) |
-| `migration cancel <migration>` | Cancel a plan that hasn't run | |
+| `migration approve <migration>` | Approve a proposed plan | `--if-match`, the plan's hash (required); `--idempotency-key` |
+| `migration resolve <migration> <entry>` | Give an item that needs input a document the new definition accepts | `--if-match` (required); `--data` or `--file`; `--idempotency-key` |
+| `migration apply <migration>` | Start an approved plan | `--if-match` (required); `--idempotency-key` |
+| `migration cancel <migration>` | Cancel a plan that hasn't run | `--idempotency-key` |
 
 `approve`, `resolve` and `apply` are bound to the plan's hash, as `migration show` prints it: if the plan
 changed after you looked, they are refused.
@@ -377,8 +385,8 @@ changed after you looked, they are refused.
 ### `preview`
 
 `colophon preview --project <project> <entry>` prints a one-time address that opens the entry's saved draft
-on your own site; `--changeset <id>` previews a publish request instead, and `--minutes` (default 15) sets
-how long the preview lasts. The address works once, within a minute. The project needs a preview address
+on your own site; `--changeset <id>` previews a publish request instead, and `--minutes` (1 to 60, default 15)
+sets how long the preview lasts. The address works once, within a minute. The project needs a preview address
 first; without one:
 
 ```text
@@ -477,10 +485,9 @@ CLI prints no colour codes.
 ### Retries
 
 The commands that write (`content create` and `import`, `comment create`, `task create` and `update`, and the
-`migration` commands that change a plan) send an `Idempotency-Key`, one per run. If a request gets no answer,
-the CLI tries again three times, after 1, 2 and 4 seconds, with the **same** key, so the write can't happen
-twice. If every
-attempt fails, the error names the key: run the same command again with `--idempotency-key <key>` and it is
+`migration` commands that change a plan) send an `Idempotency-Key`, one per run. If a request gets no answer, a
+`429` or a `5xx`, the CLI tries again three times, after 1, 2 and 4 seconds, with the **same** key, so the
+write can't happen twice. If every attempt fails, the error names the key: run the same command again with `--idempotency-key <key>` and it is
 just as safe. See [Idempotency-Key](/api/management/#create-the-idempotency-key-header).
 
 ## `colophon mcp`
@@ -494,7 +501,9 @@ standard error, and is the one command that uses a project API token. See [MCP s
 `colophon admin` is for whoever runs the server. It talks to PostgreSQL directly, as the migrator (the login
 that owns the tables), never through the API. Every `admin` command takes the migrator's connection URL as
 `--database-url` (or `COLOPHON_MIGRATION_DATABASE_URL`), or from a file with `--database-url-file` (or
-`COLOPHON_MIGRATION_DATABASE_URL_FILE`), and `--json`. Normal commands never need a database password.
+`COLOPHON_MIGRATION_DATABASE_URL_FILE`), and `--json`. The URL holds the migrator's password, so prefer the
+file or the environment variable to `--database-url`, which lands in your shell history and the process list.
+Normal commands never need a database password.
 
 | Command | What it does |
 |---|---|

@@ -148,6 +148,18 @@ async function asReaderSeesIt(page) {
 			if (input.value.includes(from)) input.value = input.value.replaceAll(from, to);
 		}
 	}, [from, 'localhost:8080']);
+	// No real secret in a published image: an invitation link's secret becomes an obviously fake one.
+	await page.evaluate(() => {
+		const pattern = /invite#[A-Za-z0-9_-]+/g;
+		const fake = (match) => 'invite#' + 'EXAMPLEnotARealSecret'.repeat(8).slice(0, match.length - 'invite#'.length);
+		const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (node.nodeValue?.includes('invite#')) node.nodeValue = node.nodeValue.replace(pattern, fake);
+		}
+		for (const input of document.querySelectorAll('input, textarea')) {
+			if (input.value.includes('invite#')) input.value = input.value.replace(pattern, fake);
+		}
+	});
 }
 
 /** The editor's side card (publishing, Locale, Versions) shows from 1280 pixels up; pages that

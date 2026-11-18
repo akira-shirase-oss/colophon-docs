@@ -41,7 +41,7 @@ The first line of the side panel is the entry's status with readers:
 |---|---|
 | **Draft** | It has never been published. *Readers can't see it: it isn't published.* |
 | **Live** | Readers get exactly what you see. *Readers see this version, in Release 3.* |
-| **Changed** | It is published, and you have saved newer changes. *Readers see the version in Release 3, not your newer changes.* |
+| **Live with changes** | It is published, and you have saved newer changes. *Readers see the version in Release 3, not your newer changes.* |
 
 Saving never changes what readers get. Only publishing does: see
 [Publishing and review](/studio/publishing/).
@@ -58,7 +58,7 @@ new version of the entry. The line under the status says what is happening:
 | **Saving…** | The save is on its way. |
 | **Not saved: …** | The server refused the content, or something you typed can't be stored yet. The message says why. |
 
-To save at once, press **Save now** (it appears while there is something to save) or
+To save at once, press **Save now** (on a wide screen, while there is something to save) or
 <kbd>⌘</kbd>+<kbd>S</kbd> (<kbd>Ctrl</kbd>+<kbd>S</kbd> on Windows and Linux).
 
 Every save keeps the version before it. Nothing is overwritten, so the **History** tab can show and
@@ -138,4 +138,4 @@ role can read but not change …*. A hidden field is never sent, so your saves c
 The Studio has no delete button yet. Deleting is done through the management API
 (`DELETE …/collections/{collection}/entries/{entry}`, see the [API reference](/api/reference/)) and
 leaves a tombstone. It is refused while the entry is published (*take it down first*), while another
-entry links to it, or while an unpublished publish request includes it.
+entry links to it (in a draft or published), or while an unpublished publish request includes it.

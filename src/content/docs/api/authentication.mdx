@@ -18,7 +18,7 @@ people use their own sign-in.
 | **Personal access token** | an opaque string from `colophon login` | A person, with their roles | Every management route that person may use, for 30 days |
 | **Browser session** | the `colophon_session` cookie | A person signed in to the Studio | Every management route; writes also need `X-CSRF-Token` and a trusted `Origin` |
 | **Site user session** | a bearer token or the `colophon_audience` cookie | One of your website's visitors | Gated content on the delivery API, and the audience routes |
-| **Preview token** | `cpv_` and more | Whoever opened the preview | `/preview/v1`, for one entry or publish request, for 15 minutes |
+| **Preview token** | `cpv_` and more | Whoever opened the preview | `/preview/v1`, for one entry or publish request, for 15 minutes unless the preview asks for 1 to 60 |
 
 This page is about the first three. Site user sessions are covered with [gated content](/api/#gated-content);
 preview tokens with [Preview](/studio/preview/).
@@ -359,13 +359,13 @@ What the token already did stays in the activity log, under its name. Revoking c
 A token is for content. These stay with people, whatever the token's kind:
 
 - **Manage access, or read the record of it.** No token may hold `members.manage`, `roles.manage`,
-  `tokens.manage` or `audit.read`, and the database refuses them too. A leaked token can't make another token,
-  invite anyone, raise a role or read what it did.
+  `tokens.manage`, `audience.manage` (site users) or `audit.read`, and the database refuses them too. A leaked
+  token can't make another token, invite anyone, raise a role or read what it did.
 - **Use the people routes**: `/me`, the project list, members, invitations, roles, tokens and the activity log
   answer `403` with `api_token_not_allowed`.
 - **Approve a publish request that a token sent for review.** Any token approving any token's request is
-  refused with `403` and `agent_self_review`: a person has to approve. A token may still publish a request a
-  person approved, and may request changes. See [Management API](/api/management/#publish-through-the-api).
+  refused with `403` and `agent_self_review`: a person has to approve. A token may still approve a request a
+  person sent (when it holds `content.review`), publish a request a person approved, and request changes. See [Management API](/api/management/#publish-through-the-api).
 - **Schedule a publish.** A schedule runs later as the person who made it, so tokens get `api_token_not_allowed`.
 - **Open a preview.** Previews show drafts to people; tokens are refused.
 - **Reach another project.** Another project's routes answer `404`, the same as a project that doesn't exist,
@@ -464,7 +464,7 @@ show a person, and the request id. Branch on `code` and `details.reason`.
 | `403` | `forbidden` | `budget_exceeded` | Over `documents_per_day` or `max_concurrent_jobs` |
 | `403` | `forbidden` | `cannot_grant` | Making a token with a power you don't have |
 | `404` | `not_found` | | Another project, or something the token may not see |
-| `422` | `validation_failed` | `invalid_expiry`, `permissions_required`, `too_many_tokens`, `invalid_limit` | A token the API refuses to make or change |
+| `422` | `validation_failed` | `invalid_token_name`, `invalid_token_description`, `unknown_token_kind`, `invalid_expiry`, `permissions_required`, `permissions_not_applicable`, `too_many_tokens`, `invalid_limit`, `limits_empty` | A token the API refuses to make or change |
 | `429` | `rate_limited` | `rate_limited` | Over a rate limit; wait `Retry-After` seconds |
 
 No credential at all:
@@ -534,4 +534,4 @@ The full list of codes is on [Errors](/api/errors/).
   value as `X-CSRF-Token`, from an `Origin` the server trusts exactly; bearer tokens need neither, since a
   browser never attaches them by itself.
 
-Only people can approve their own work where their role allows it, manage access and schedule publishing.
+Only people can manage access, schedule publishing and approve a publish request a token sent.
