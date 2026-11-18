@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // After a deploy: the things only a real browser on the real host shows. Search answers (its
 // WebAssembly runs under the site's content security policy), the API reference renders its
-// operations, every page in the list loads with no console error, and a phone-width page doesn't
-// scroll sideways.
+// operations, every page in the list loads with no console error, a phone-width page doesn't
+// scroll sideways, and every page passes the accessibility scan (scripts/axe-scan.mjs) at 1440 and
+// 360, light and dark, without JavaScript, settled, and with a changelog card open.
 //
 //   node scripts/check-live.mjs https://docs.colophon.404human.dev
 import { chromium } from 'playwright';
+import { describe, scanSite } from './axe-scan.mjs';
 
 const base = (process.argv[2] ?? 'https://docs.colophon.404human.dev').replace(/\/$/, '');
 const pages = ['/', '/quick-start/', '/installation/', '/concepts/', '/api/', '/api/authentication/', '/api/delivery/', '/api/management/', '/changelog/'];
@@ -75,10 +77,12 @@ for (const path of pages) {
 	const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 	if (overflow > 0) problems.push(`${path} scrolls sideways by ${overflow}px at 360px`);
 }
+const scans = await scanSite(browser, base, pages);
+for (const row of scans.filter((row) => !row.ok)) problems.push(`axe: ${describe(row)}`);
 await browser.close();
 
 if (problems.length > 0) {
 	console.error(`check-live: ${problems.length} problem(s) on ${base}\n${problems.map((problem) => `  - ${problem}`).join('\n')}`);
 	process.exit(1);
 }
-console.log(`check-live: security headers right; ${pages.length} pages load, search answers (${results} results), the reference renders, nothing scrolls sideways at 360px`);
+console.log(`check-live: security headers right; ${pages.length} pages load, search answers (${results} results), the reference renders, nothing scrolls sideways at 360px, ${scans.length} accessibility scans clean`);
