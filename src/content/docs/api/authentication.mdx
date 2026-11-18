@@ -244,7 +244,19 @@ curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/tokens" \
 ```
 
 ```json output=tokens
-(filled in by the runner)
+{
+  "kind": "custom",
+  "permissions": [
+    {
+      "action": "content.read",
+      "subject": "recipes"
+    },
+    {
+      "action": "content.create",
+      "subject": "recipes"
+    }
+  ]
+}
 ```
 
 ### Limits

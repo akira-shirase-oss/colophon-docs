@@ -39,7 +39,7 @@ sleep 1
 wait; cat public-events.txt
 ```
 
-```http output=ops
+```http output=ops match=lines
 HTTP/1.1 200 OK
 content-type: text/event-stream
 cache-control: no-store
@@ -170,7 +170,8 @@ wait; cat watch.txt
 ```
 
 ```text output=ops
-(filled in by the runner)
+new release: 4
+new release: 5
 ```
 
 ### In a browser, on the same origin
@@ -224,26 +225,20 @@ curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/env
 wait; cat signed-in-events.txt
 ```
 
-```http output=ops
+```http output=ops match=lines
 HTTP/1.1 200 OK
 content-type: text/event-stream
 cache-control: no-cache
 x-accel-buffering: no
-x-request-id: 01a1ee8d-2bf8-73b1-90fb-bd2b41938192
+x-request-id: 01a1ef6c-d4aa-71c5-8002-b1b92ca772f5
 transfer-encoding: chunked
-date: Wed, 18 Nov 2026 12:06:31 GMT
+date: Wed, 18 Nov 2026 16:10:49 GMT
 
 event: hello
 data: {}
 
 event: change
-data: {"k":"tokens"}
-
-event: change
-data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
-
-: keep-alive
-
+data: {"c":"recipes","e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"entries"}
 ```
 
 And with a publish instead of a save (a recipe published in the Studio), the same stream carries:
@@ -260,12 +255,24 @@ sleep 1
 wait; cat signed-in-events.txt; rm -f signed-in-events.txt public-events.txt
 ```
 
-```text output=ops
-event: change
-data: {"e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"releases"}
+```text output=ops match=lines
+event: hello
+data: {}
 
 event: change
-data: {"c":"recipes","e":"01a1ee81-1370-73c4-95d0-8dd53d794477","k":"entries"}
+data: {"c":"recipes","e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"entries"}
+
+event: change
+data: {"e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"changesets"}
+
+event: change
+data: {"e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"changesets"}
+
+event: change
+data: {"e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"releases"}
+
+event: change
+data: {"c":"recipes","e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"entries"}
 ```
 
 ### Frames
@@ -371,9 +378,12 @@ curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/env
 wait; cat hints.txt; rm -f hints.txt watch.txt
 ```
 
-```text output=ops
-(filled in by the runner)
-``` Keep the token on the server: see [Keep tokens on a server](/api/authentication/#keep-tokens-on-a-server).
+```text output=ops match=lines
+read everything again
+change: {"c":"recipes","e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"entries"}
+```
+
+Keep the token on the server: see [Keep tokens on a server](/api/authentication/#keep-tokens-on-a-server).
 
 ### Signed-in stream limits
 

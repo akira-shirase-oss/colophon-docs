@@ -178,13 +178,14 @@ first answer; set `TART` to it, and pass it as a variable rather than pasting it
 --arg` builds the body, so no quoting goes wrong):
 
 ```sh run=graphql
+jq -n --arg id "$TART" '{
+    query: "query Tart($id: ID!) { entry(id: $id) { id title dish minutes method published { revisionId generation } createdAt updatedAt createdBy hiddenFields locale revisionId collection } }",
+    variables: { id: $id }
+  }' |
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg id "$TART" '{
-    query: "query Tart($id: ID!) { entry(id: $id) { id title dish minutes method published { revisionId generation } createdAt updatedAt createdBy hiddenFields locale revisionId collection } }",
-    variables: { id: $id }
-  }')"
+  --data @-
 ```
 
 <details>
@@ -255,7 +256,20 @@ curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/col
 ```
 
 ```json output=graphql
-{"data":null,"errors":[{"message":"Unknown argument \"where\" on field \"entries\" of type \"Query\".","locations":[{"line":1,"column":11}]}]}
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "Invalid value for argument \"where\", unknown field \"dish\" of type \"recipesFilter\"",
+      "locations": [
+        {
+          "line": 1,
+          "column": 11
+        }
+      ]
+    }
+  ]
+}
 ```
 
 With `minutes` filterable, the schema has these inputs:
@@ -347,17 +361,33 @@ show. `applied.query` is the document `POST …/entries/query` takes; sending it
 `AFTER` set to the `endCursor` above:
 
 ```sh run=graphql
+jq -n --arg after "$AFTER" '{
+    query: "query Quick($most: Float, $after: String) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1, after: $after) { nodes { title minutes } pageInfo { endCursor hasNextPage } } }",
+    variables: { most: 30, after: $after }
+  }' |
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg after "$AFTER" '{
-    query: "query Quick($most: Float, $after: String) { entries(where: {minutes: {lte: $most}}, orderBy: [{field: minutes, dir: ASC}], first: 1, after: $after) { nodes { title minutes } pageInfo { endCursor hasNextPage } } }",
-    variables: { most: 30, after: $after }
-  }')"
+  --data @-
 ```
 
 ```json output=graphql
-{"data":{"entries":{"nodes":[{"title":"Flapjacks","minutes":25.0}],"pageInfo":{"endCursor":null,"hasNextPage":false}}}}
+{
+  "data": {
+    "entries": {
+      "nodes": [
+        {
+          "title": "Scones",
+          "minutes": 25.0
+        }
+      ],
+      "pageInfo": {
+        "endCursor": "djE6NmY4YzZjOWQzYzhkODI4ZGMxYWQ2NmY5MTkwNjcyYWQyYzJhM2M1NzY4MmVlMTUzYmY0MTAwNWQwZGM3NGRiNjpbMjUsIjAxYTFlZjZjLTU0MTAtNzM2NS05ZjI3LTdkODk2NjNiNDg0ZSJd",
+        "hasNextPage": true
+      }
+    }
+  }
+}
 ```
 
 A cursor belongs to the query that made it. With a different query it is refused with `foreign_cursor`
@@ -414,10 +444,11 @@ times, built with a shell loop:
 
 ```sh run=graphql
 fields=$(for i in $(seq 600); do printf 'title '; done)
+jq -n --arg q "{ entries { nodes { $fields} } }" '{query: $q}' |
 curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg q "{ entries { nodes { $fields} } }" '{query: $q}')"
+  --data @-
 ```
 
 ```http output=graphql
@@ -444,10 +475,11 @@ And one with nine aliased `entries` calls, `r0` to `r8`. The first eight run; th
 
 ```sh run=graphql
 calls=$(for i in $(seq 0 8); do printf 'r%d: entries(first: 1) { nodes { id } } ' "$i"; done)
+jq -n --arg q "{ $calls}" '{query: $q}' |
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg q "{ $calls}" '{query: $q}')"
+  --data @-
 ```
 
 ```json output=graphql
@@ -518,17 +550,35 @@ date: Wed, 18 Nov 2026 11:58:01 GMT
 query, `AFTER`, sent with a query that has no filter:
 
 ```sh run=graphql
+jq -n --arg after "$AFTER" '{
+    query: "query All($after: String) { entries(first: 1, after: $after) { nodes { title } } }",
+    variables: { after: $after }
+  }' |
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/graphql" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg after "$AFTER" '{
-    query: "query All($after: String) { entries(first: 1, after: $after) { nodes { title } } }",
-    variables: { after: $after }
-  }')"
+  --data @-
 ```
 
 ```json output=graphql
-{"data":null,"errors":[{"message":"this cursor is not valid for this query","locations":[{"line":1,"column":3}],"extensions":{"code":"foreign_cursor","pointer":""}}]}
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "this cursor is not valid for this query",
+      "locations": [
+        {
+          "line": 1,
+          "column": 29
+        }
+      ],
+      "extensions": {
+        "code": "foreign_cursor",
+        "pointer": ""
+      }
+    }
+  ]
+}
 ```
 
 Always check `errors`, even on a `200`.

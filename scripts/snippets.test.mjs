@@ -1,7 +1,7 @@
 // The runner's comparison: what changes on every run is normalised away, nothing else is.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { display, fences, normalise } from './snippets.mjs';
+import { display, fences, matches, normalise } from './snippets.mjs';
 
 const answer = (id, date, body) =>
 	`HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: ${id}\r\ncontent-length: ${body.length}\r\ndate: ${date}\r\n\r\n${body}`;
@@ -49,4 +49,11 @@ test('a paging cursor (REST next_cursor, GraphQL endCursor) does not count; a mi
 	const page = (cursor) => answer('01a1ee61-d403-73ff-9f17-bfd7ba3edc0f', 'Wed, 18 Nov 2026 11:19:11 GMT', `{"next_cursor":${cursor},"data":{"pageInfo":{"endCursor":${cursor}}}}`);
 	assert.equal(normalise(page('"djE6YWFh"')), normalise(page('"djE6YmJi"')));
 	assert.notEqual(normalise(page('"djE6YWFh"')), normalise(page('null')));
+});
+
+test('match=lines: every line the page shows must arrive, in any order; others may come too', () => {
+	const page = { info: ' output=ops match=lines', code: 'event: change\ndata: {"k":"entries"}\n\nevent: hello\ndata: {}' };
+	assert.ok(matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n\nevent: change\ndata: {"k":"entries"}\n', page));
+	assert.ok(!matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n', page));
+	assert.ok(!matches('event: hello\ndata: {}\n', { info: ' output=ops', code: 'event: hello\ndata: {}\nmore' }));
 });
