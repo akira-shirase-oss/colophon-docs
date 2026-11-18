@@ -13,7 +13,7 @@ docs:
 Colophon now has one version for the server, the CLI and the packages: `0.1.0-alpha.1`, not yet released. `GET /version` reports the release, its git commit, its build date and the API versions it serves, needs no sign-in and is never rate-limited. Fields may be added to it, never removed or renamed.
 
 ```bash
-curl http://localhost:8080/version
+curl https://cms.example.com/version
 {"version":"0.1.0-alpha.1","commit":"…","build_date":"2026-10-28","api":["v1"]}
 ```
 

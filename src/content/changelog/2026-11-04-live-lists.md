@@ -13,7 +13,7 @@ When a colleague saves an entry, opens a publish request or publishes a release,
 The same stream is open to your own tools. Any member or project API token can subscribe:
 
 ```bash
-curl -N http://localhost:8080/api/v1/projects/{project}/environments/{environment}/events \
+curl -N https://cms.example.com/api/v1/projects/{project}/environments/{environment}/events \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

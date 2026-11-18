@@ -5,14 +5,19 @@
  * has one too).
  */
 import Default from '@astrojs/starlight/components/PageTitle.astro';
+import YourUrl from './YourUrl.astro';
 
 const route = Astro.locals.starlightRoute;
 const id = route.entry?.id;
 // The home page's route id is empty; the changelog has a Markdown copy of its own.
+// Pages whose examples call a Colophon get the "Your Colophon URL" control.
+const urlPages = /^(api(\/|$)|sdk$|cli$|mcp$)/;
+const showUrl = id !== undefined && urlPages.test(id);
 const mdHref = id === undefined ? undefined : `/${id === '' || id === 'index' ? 'index' : id}.md`;
 ---
 
 <Default />
+{showUrl && <YourUrl />}
 {
 	mdHref && (
 		<div class="page-actions not-content print:hidden">

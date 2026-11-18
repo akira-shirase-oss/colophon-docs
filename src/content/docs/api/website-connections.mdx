@@ -63,7 +63,7 @@ The body of a new connection:
 | `location` | No | Site checks only: 1 to 63 lowercase letters, digits and dashes |
 
 ```sh run=ops
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"kind": "webhook", "name": "Site rebuild", "url": "https://build.example.com/hooks/colophon"}'
@@ -100,7 +100,7 @@ so sending the same request twice makes two connections.
 `204 No Content` (`DESTINATION` is the `id` the create answered):
 
 ```sh run=ops
-curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations/$DESTINATION" \
+curl -i -X PUT "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/destinations/$DESTINATION" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}'
@@ -123,7 +123,7 @@ address must be `https`, must not name a private, loopback, link-local or other 
 must not carry a user name or password:
 
 ```sh run=ops
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"kind": "probe", "name": "Home page", "url": "https://192.168.1.20/"}'
@@ -290,7 +290,7 @@ attempts, a site check 10. A job not finished an hour after it was created fails
 List the jobs, newest first, optionally for one release:
 
 ```sh run=ops
-curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/jobs?generation=2" \
+curl "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/jobs?generation=2" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
@@ -318,7 +318,7 @@ The worker's timing can be tuned: `COLOPHON_WORKER_ATTEMPT_MS` (each attempt's d
 Every release has a receipt: what was published, what each connection did, and what each site check saw.
 
 ```sh run=ops
-curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases/1" \
+curl "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/releases/1" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

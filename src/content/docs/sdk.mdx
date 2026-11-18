@@ -58,15 +58,17 @@ the SDK knows. It is ESM only, has no runtime dependencies, and runs on Node.js 
 
 </Steps>
 
-The examples below continue from the [quick start](/quick-start/): Colophon on `http://localhost:8080`, the
-project "Field notes" with its `recipes`, and `PROJECT` and `COLOPHON_TOKEN` in your environment.
+The examples below continue from the [quick start](/quick-start/): the project "Field notes" with its `recipes`,
+and `PROJECT` and `COLOPHON_TOKEN` in your environment. They call `https://cms.example.com`: put your
+Colophon's address there (the quick start on this machine is `http://localhost:8080`), or enter it once in
+**Your Colophon URL** above.
 
 ## Make a client
 
 ```js not-run="a fragment: the options a client takes"
 import { Client } from '@colophon-cms/sdk';
 
-const client = new Client({ baseUrl: 'http://localhost:8080', token: process.env.COLOPHON_TOKEN });
+const client = new Client({ baseUrl: 'https://cms.example.com', token: process.env.COLOPHON_TOKEN });
 
 const site = client.delivery(process.env.PROJECT);    // published content: /content/v1/…
 const cms = client.environment(process.env.PROJECT);  // drafts and writes: /api/v1/projects/…/environments/…
@@ -80,7 +82,7 @@ doesn't know a project by its URL name: `delivery('field-notes')` is answered `4
 
 | Option | Default | What it does |
 |---|---|---|
-| `baseUrl` | (required) | Colophon's origin, such as `http://localhost:8080`. Must be `http:` or `https:` |
+| `baseUrl` | (required) | Colophon's origin, such as `https://cms.example.com`. Must be `http:` or `https:` |
 | `token` | none | A bearer credential: a project API token (`colophon_api_…`) or a personal access token from `colophon login`. Sent as `Authorization: Bearer` |
 | `session` | none | A Studio session instead of a token: `{ csrf, cookie? }`. `csrf` is the `colophon_csrf` cookie's value, sent as `X-CSRF-Token` on writes; `cookie` is the `colophon_session` value, outside a browser only. Pass `token` or `session`, not both |
 | `timeoutMs` | `15000` | How long one request may take. A per-call `signal` joins it |
@@ -114,7 +116,7 @@ Save this as `read.mjs`:
 import { Client, ApiError, mediaFor } from '@colophon-cms/sdk';
 import { renderToHtml } from '@colophon-cms/rich-text';
 
-const baseUrl = 'http://localhost:8080';
+const baseUrl = 'https://cms.example.com';
 const project = process.env.PROJECT; // the project id, not its URL name
 
 const client = new Client({ baseUrl });
@@ -240,7 +242,7 @@ Save this as `write.mjs`:
 ```js title="write.mjs" run=sdk file=write.mjs
 import { Client, ApiError, newIdempotencyKey } from '@colophon-cms/sdk';
 
-const baseUrl = 'http://localhost:8080';
+const baseUrl = 'https://cms.example.com';
 const project = process.env.PROJECT;
 
 const client = new Client({ baseUrl, token: process.env.COLOPHON_TOKEN, compat: 'throw' });
@@ -497,7 +499,7 @@ server this SDK supports (`OLDEST_SERVER`, `0.1.0-alpha.1`). The `colophon` CLI 
 ```js title="fit.mjs" run=sdk file=fit.mjs
 import { Client } from '@colophon-cms/sdk';
 
-const fit = await new Client({ baseUrl: 'http://localhost:8080' }).compatibility();
+const fit = await new Client({ baseUrl: 'https://cms.example.com' }).compatibility();
 console.log(fit);
 ```
 
@@ -518,7 +520,7 @@ When it doesn't fit, `misfit` is a stable code (`api_dropped`, `api_not_yet`, `l
 `before_oldest`, `no_version_report`) and `reason` says which side to upgrade. Against a server on 0.2.0:
 
 ```text not-run="needs a server on another minor version"
-@colophon-cms/sdk 0.1.0-alpha.1 is too old for the server at http://localhost:8080, which runs 0.2.0: before 1.0 each minor release may change the API, so the SDK and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install @colophon-cms/sdk@0.2.0 to match it.
+@colophon-cms/sdk 0.1.0-alpha.1 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so the SDK and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install @colophon-cms/sdk@0.2.0 to match it.
 ```
 
 The client also checks once by itself, before its first API call, as the `compat` option says:

@@ -22,8 +22,8 @@ Idempotency-Key: …
 Published content is served at `/content/v1` with no sign-in, from a published copy read by a database role that can't see drafts at all. `{project}` is the project's id:
 
 ```sh
-curl http://localhost:8080/content/v1/{project}/{environment}/posts
-curl "http://localhost:8080/content/v1/{project}/{environment}/posts/{entry}?generation=12"
+curl https://cms.example.com/content/v1/{project}/{environment}/posts
+curl "https://cms.example.com/content/v1/{project}/{environment}/posts/{entry}?generation=12"
 ```
 
 Without `generation` you read the latest release; with it you read that release exactly as it was, so a site build can take every collection from one release. Every answer names its generation in `Colophon-Generation`, a list's `next_cursor` keeps its first page's generation so paging never mixes two releases, and a generation not yet published is 422 `invalid_generation`.

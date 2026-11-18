@@ -158,7 +158,8 @@ const operations = Object.values(spec.paths).reduce(
 		</header>
 		<p class="ref-note">
 			{operations} operations on {paths} paths, generated from the OpenAPI document Colophon serves at <code>/openapi.json</code> (version {spec.info.version}).
-			The server address is <code>http://localhost:8080</code>, the quick start's; change it under <strong>Server</strong>. Colophon's API doesn't
+			The examples call <code>https://cms.example.com</code>, a reserved example domain; pick <strong>the quick start on this machine</strong>
+			under <strong>Server</strong>, or set <strong>Your Colophon URL</strong> on any API page and it comes first here. Colophon's API doesn't
 			answer browser requests from other sites, except on its preview routes, so <strong>Test Request</strong> from this page reaches your server only if it
 			allows this origin: otherwise copy the request as <code>curl</code> from the code samples. Put a token in <strong>Authentication</strong> only for
 			a local or test server. <a href="/api/authentication/">Which credential each route takes</a>.
@@ -167,10 +168,23 @@ const operations = Object.values(spec.paths).reduce(
 		<noscript><p>The interactive reference needs JavaScript. The document itself is at <a href="/openapi.json">/openapi.json</a>.</p></noscript>
 		<script type="module" is:inline>
 			import { createApiReference } from '/scalar/standalone.esm.js';
+			// The reader's own server, if they set one on an API page (src/lib/your-url.ts holds the
+			// same rule: https, or http for this machine; the origin only). Kept in this browser.
+			const servers = [
+				{ url: 'https://cms.example.com', description: 'Your Colophon (an example domain: enter yours on any API page)' },
+				{ url: 'http://localhost:8080', description: 'The quick start on this machine' },
+			];
+			try {
+				const stored = new URL(localStorage.getItem('colophon-docs:server') ?? '');
+				const local = ['localhost', '127.0.0.1', '[::1]'].includes(stored.hostname);
+				if (stored.protocol === 'https:' || (stored.protocol === 'http:' && local)) {
+					servers.unshift({ url: stored.origin, description: 'Your Colophon' });
+				}
+			} catch {}
 			const dark = document.documentElement.dataset.theme === 'dark';
 			createApiReference('#reference', {
 				url: '/openapi.json',
-				servers: [{ url: 'http://localhost:8080', description: 'The quick start on this machine' }],
+				servers,
 				authentication: { preferredSecurityScheme: 'apiToken' },
 				defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
 				darkMode: dark,

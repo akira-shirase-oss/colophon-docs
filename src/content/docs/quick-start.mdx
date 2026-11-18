@@ -56,7 +56,7 @@ what you see is what the current `main` branch answers.
 
    Every later command in this guide runs in this folder, `colophon-cms/deploy/quickstart`.
 
-2. **Open the Studio** at `http://localhost:8080/studio/` in your browser. Use
+2. **Open the Studio** at `http://localhost:8080/studio/` (this machine) in your browser. Use
    `localhost`, not `127.0.0.1`: sign-in trusts the address Colophon was told it lives at.
 
    The Studio sees that nobody runs this Colophon yet and asks for the first account.
@@ -458,6 +458,14 @@ needs no token at all.
 :::
 
 ## What's next
+
+:::tip[When you deploy, use your domain]
+Everything here ran on this machine, at `http://localhost:8080`. A Colophon others use lives at an `https://`
+address of your own, such as `https://cms.yoursite.com`: the rest of these docs write
+`https://cms.example.com` in its place (a domain reserved for examples), and **Your Colophon URL** on the API
+pages puts yours into every example. [Installation](/installation/) and [Self-hosting](/self-hosting/configuration/)
+cover serving it on your domain.
+:::
 
 <CardGrid>
 	<LinkCard title="Authentication & API tokens" href="/api/authentication/" description="Kinds and scopes, expiry, revoking, limits, and every error a token can get." />

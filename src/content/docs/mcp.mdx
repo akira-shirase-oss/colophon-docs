@@ -231,7 +231,7 @@ The answers:
 1. **Start the session.** Send the `initialize` handshake without a session id:
 
    ```sh run=mcp
-   curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+   curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
      -H "Authorization: Bearer $COLOPHON_TOKEN" \
      -H "Content-Type: application/json" \
      -H "Accept: application/json, text/event-stream" \
@@ -285,7 +285,7 @@ The answers:
 2. **Say you're ready.** The `notifications/initialized` notification is accepted with `202` and no body:
 
    ```sh run=mcp
-   curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+   curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
      -H "Authorization: Bearer $COLOPHON_TOKEN" \
      -H "Content-Type: application/json" \
      -H "MCP-Protocol-Version: 2025-11-25" \
@@ -304,7 +304,7 @@ The answers:
    is long, so `jq` keeps the first two here:
 
    ```sh run=mcp
-   curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+   curl -s -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
      -H "Authorization: Bearer $COLOPHON_TOKEN" \
      -H "Content-Type: application/json" \
      -H "MCP-Protocol-Version: 2025-11-25" \
@@ -382,7 +382,7 @@ The answers:
 4. **Call a tool.** Find recipes with "lemon" in the title:
 
    ```sh run=mcp
-   curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+   curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
      -H "Authorization: Bearer $COLOPHON_TOKEN" \
      -H "Content-Type: application/json" \
      -H "MCP-Protocol-Version: 2025-11-25" \
@@ -448,7 +448,7 @@ The answers:
 5. **End the session.** `DELETE` with the session id; running requests in it are cancelled:
 
    ```sh run=mcp
-   curl -i -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+   curl -i -X DELETE "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
      -H "Authorization: Bearer $COLOPHON_TOKEN" \
      -H "MCP-Protocol-Version: 2025-11-25" \
      -H "Mcp-Session-Id: $MCP_SESSION"
@@ -488,7 +488,7 @@ for the token, the ninth `initialize`:
 {/* snippet mcp: snippets/mcp-busy-token.sh open */}
 
 ```sh run=mcp
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "MCP-Protocol-Version: 2025-11-25" \
@@ -574,7 +574,7 @@ To send the messages on the rest of this page yourself, start a session as in st
 
 ```sh run=mcp
 mcp() {
-  curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/mcp" \
+  curl -s -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/mcp" \
     -H "Authorization: Bearer $COLOPHON_TOKEN" \
     -H "Content-Type: application/json" \
     -H "MCP-Protocol-Version: 2025-11-25" \

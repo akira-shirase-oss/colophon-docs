@@ -11,7 +11,7 @@ docs:
 Colophon now stores images. An upload (PNG, JPEG or WebP, up to 20 MiB) lands in quarantine and answers `202` with state `quarantined`. A worker then checks the real file signature, decodes it within size limits, strips its metadata and promotes it to `usable`, or marks it `rejected` with a reason. A verified image also gets `w320` and `w1280` renditions when it is wider than those.
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/projects/{project}/environments/{environment}/assets \
+curl -X POST https://cms.example.com/api/v1/projects/{project}/environments/{environment}/assets \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Idempotency-Key: upload-harbour-0001" \
   -H "Content-Type: image/jpeg" -H "X-Colophon-File-Name: harbour.jpg" \
   --data-binary @harbour.jpg

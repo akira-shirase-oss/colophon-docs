@@ -22,14 +22,14 @@ the first frame of every stream is a cue to read everything again.
 ## The public stream
 
 ```sh not-run="keeps the stream open until you stop it"
-curl -N "http://localhost:8080/content/v1/$PROJECT/production/events"
+curl -N "https://cms.example.com/content/v1/$PROJECT/production/events"
 ```
 
 `-N` keeps curl from buffering. To watch one on the quick start, keep a stream open for six seconds in the
 background, publish a recipe in the Studio meanwhile, then look at what arrived:
 
 ```sh run=ops
-curl -sN -i --max-time 6 "http://localhost:8080/content/v1/$PROJECT/production/events" > public-events.txt &
+curl -sN -i --max-time 6 "https://cms.example.com/content/v1/$PROJECT/production/events" > public-events.txt &
 sleep 1
 ```
 
@@ -84,7 +84,7 @@ refusal's status or `Retry-After`.) It keeps the newest release number it has se
 only when that number goes up:
 
 ```ts title="site-events.ts" run=ops file=site-events.ts
-const CMS = 'http://localhost:8080';
+const CMS = 'https://cms.example.com';
 const PROJECT = process.env.PROJECT!;
 const delivery = `${CMS}/content/v1/${PROJECT}/production`;
 
@@ -209,17 +209,17 @@ for entries, comments and tasks, in which content type. Any credential that may 
 environment can open it, an API token included:
 
 ```sh not-run="keeps the stream open until you stop it; the six-second version below runs in CI"
-curl -N "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+curl -N "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/events" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
 Here the stream is kept open for six seconds while a draft recipe is saved through the API:
 
 ```sh run=ops exit=0
-curl -sN -i --max-time 6 "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+curl -sN -i --max-time 6 "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/events" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" > signed-in-events.txt &
 sleep 1
-curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -s -o /dev/null -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" -d '{"dish": "Rock cakes", "minutes": 20}'
 wait; cat signed-in-events.txt
@@ -244,7 +244,7 @@ data: {"c":"recipes","e":"01a1ef6c-2700-716c-b6d8-d667d08bab34","k":"entries"}
 And with a publish instead of a save (a recipe published in the Studio), the same stream carries:
 
 ```sh run=ops
-curl -sN --max-time 6 "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/events" \
+curl -sN --max-time 6 "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/events" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" > signed-in-events.txt &
 sleep 1
 ```
@@ -318,7 +318,7 @@ with `fetch`, as in the [public example](#listen-from-your-sites-server), adding
 three event names:
 
 ```ts title="signed-in-events.ts" run=ops file=signed-in-events.ts
-const url = `http://localhost:8080/api/v1/projects/${process.env.PROJECT}/environments/production/events`;
+const url = `https://cms.example.com/api/v1/projects/${process.env.PROJECT}/environments/production/events`;
 
 type Hint = { k: string; c?: string; e?: string };
 
@@ -372,7 +372,7 @@ setTimeout(() => process.exit(0), 6_000); // only for this example
 ```sh run=ops
 node hints.ts > hints.txt &
 sleep 1
-curl -s -o /dev/null -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -s -o /dev/null -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" -d '{"dish": "Fat rascals", "minutes": 25}'
 wait; cat hints.txt; rm -f hints.txt watch.txt

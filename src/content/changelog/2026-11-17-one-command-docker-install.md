@@ -19,7 +19,7 @@ docker compose up -d --wait
 docker compose logs colophon | grep "Setup code"
 ```
 
-Then open `http://localhost:8080/studio/`, create the first account and enter the setup code; the Studio's first-run screen shows that command too.
+Then open `https://cms.example.com/studio/`, create the first account and enter the setup code; the Studio's first-run screen shows that command too.
 
 Two pieces help any install, container or not:
 

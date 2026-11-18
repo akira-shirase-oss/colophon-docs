@@ -17,7 +17,7 @@ Why it matters: the server has the last word, not the editor. A document deeper 
 Check a document before saving it; the endpoint stores nothing:
 
 ```sh
-curl -X POST http://localhost:8080/api/v1/rich-text/validate \
+curl -X POST https://cms.example.com/api/v1/rich-text/validate \
   -H 'Content-Type: application/json' \
   -d '{"schema":"colophon/rich-text","version":1,"doc":{"type":"doc","content":[{"type":"paragraph"}]}}'
 ```

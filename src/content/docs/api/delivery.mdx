@@ -30,7 +30,7 @@ Ginger biscuits (`$ENTRY`).
 ## List a collection
 
 ```sh run=delivery
-curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?limit=1"
+curl -s "https://cms.example.com/content/v1/$PROJECT/production/recipes?limit=1"
 ```
 
 <details>
@@ -80,7 +80,7 @@ mixes two releases even if someone publishes halfway through:
 {/* snippet delivery: snippets/from-last.sh CURSOR=.next_cursor */}
 
 ```sh run=delivery
-curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?limit=1&cursor=$CURSOR"
+curl -s "https://cms.example.com/content/v1/$PROJECT/production/recipes?limit=1&cursor=$CURSOR"
 ```
 
 <details>
@@ -133,7 +133,7 @@ A project id that doesn't exist is `404`.
 ## Read one entry
 
 ```sh run=delivery
-curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY"
+curl -i "https://cms.example.com/content/v1/$PROJECT/production/recipes/$ENTRY"
 ```
 
 <details>
@@ -186,7 +186,7 @@ it was published: a page assembled from several reads stays consistent, and you 
 at any release. Release 1 had only the Lemon tart:
 
 ```sh run=delivery
-curl -s "http://localhost:8080/content/v1/$PROJECT/production/recipes?generation=1" | grep -o '"title":"[^"]*"'
+curl -s "https://cms.example.com/content/v1/$PROJECT/production/recipes?generation=1" | grep -o '"title":"[^"]*"'
 ```
 
 ```text output=delivery
@@ -211,7 +211,7 @@ Delivery answers are built for caches:
 Revalidate with the `etag` of the entry you read above:
 
 ```sh run=delivery
-curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY" \
+curl -i "https://cms.example.com/content/v1/$PROJECT/production/recipes/$ENTRY" \
   -H "If-None-Match: $DELIVERY_ETAG"
 ```
 
@@ -260,7 +260,7 @@ email, web address, URL name, or a single link). The Studio doesn't set this fla
 type through the API. With a token that may change content types:
 
 ```sh run=delivery
-curl -s -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
+curl -s -X PUT "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H 'If-Match: "v2"' \
@@ -280,7 +280,7 @@ filterable changes no stored content, so the change is accepted at once. Now ask
 30 minutes or less, quickest first:
 
 ```sh run=delivery
-curl -s -X POST "http://localhost:8080/content/v1/$PROJECT/production/recipes/query" \
+curl -s -X POST "https://cms.example.com/content/v1/$PROJECT/production/recipes/query" \
   -H "Content-Type: application/json" \
   -d '{"filters": [{"field": "minutes", "op": "lte", "value": 30}], "sort": [{"field": "minutes", "dir": "asc"}], "fields": ["dish", "minutes"]}'
 ```
@@ -347,7 +347,7 @@ in a request through the API. Its release takes the entry down at **every** rele
 {/* snippet delivery: snippets/take-down.sh */}
 
 ```sh run=delivery
-curl -i "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY"
+curl -i "https://cms.example.com/content/v1/$PROJECT/production/recipes/$ENTRY"
 ```
 
 ```http output=delivery
@@ -368,7 +368,7 @@ date: Wed, 18 Nov 2026 11:39:18 GMT
 ```
 
 ```sh run=delivery
-curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8080/content/v1/$PROJECT/production/recipes/$ENTRY?generation=2"
+curl -s -o /dev/null -w "%{http_code}\n" "https://cms.example.com/content/v1/$PROJECT/production/recipes/$ENTRY?generation=2"
 ```
 
 ```text output=delivery
@@ -387,8 +387,8 @@ A row that uses uploads, in an image field or inside rich text, carries `media`,
 ```json not-run="a fragment of an answer"
 "media": {
   "01a1…": {
-    "url": "http://localhost:8080/media/v1/{project}/production/01a1…/{sha256}",
-    "current_url": "http://localhost:8080/media/v1/{project}/production/01a1…",
+    "url": "https://cms.example.com/media/v1/{project}/production/01a1…/{sha256}",
+    "current_url": "https://cms.example.com/media/v1/{project}/production/01a1…",
     "type": "image/webp",
     "width": 2400,
     "height": 1600,

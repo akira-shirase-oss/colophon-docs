@@ -15,7 +15,7 @@ A project now defines its own content types. A definition has a name, the field 
 Definitions are versioned and insert-only, and each revision records the version it was checked against. `GET …/content-types/{slug}` answers with `ETag: "v<version>"`; a change is a `PUT` with that value in `If-Match`, so two people editing one type can't overwrite each other (409 `stale_version`). A change that would leave stored entries invalid is refused with 422 `needs_migration`, so every stored revision stays valid.
 
 ```sh
-curl -X POST "http://localhost:8080/api/v1/projects/{project}/environments/{environment}/content-types" \
+curl -X POST "https://cms.example.com/api/v1/projects/{project}/environments/{environment}/content-types" \
   -H 'Authorization: Bearer …' -H 'Idempotency-Key: create-posts-type-01' \
   -H 'Content-Type: application/json' \
   -d '{"slug":"posts","definition":{"name":"Posts","title_field":"headline",

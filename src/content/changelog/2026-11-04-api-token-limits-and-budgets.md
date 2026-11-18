@@ -21,7 +21,7 @@ Why it matters: a looping script or agent can't flood the API or rewrite a proje
 `GET …/tokens/{token}` shows the limits and current `usage`; `{"limits": null}` removes them. Token management takes a person's credential:
 
 ```sh
-curl -X PATCH http://localhost:8080/api/v1/projects/{project}/tokens/{token} \
+curl -X PATCH https://cms.example.com/api/v1/projects/{project}/tokens/{token} \
   -H "Authorization: Bearer $PERSONAL_TOKEN" -H "Content-Type: application/json" \
   -d '{"limits": {"requests_per_minute": 60, "documents_per_day": 500}}'
 ```

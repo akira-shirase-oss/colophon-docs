@@ -15,7 +15,7 @@ The frame carries nothing but its own existence: no ids, no collections, no cont
 The intended shape is one stream per site server, not per visitor: your server listens once and tells its open browser tabs to refresh, which keeps the CMS's stream count proportional to sites, not readers.
 
 ```sh
-curl -N http://localhost:8080/content/v1/{project}/{environment}/events
+curl -N https://cms.example.com/content/v1/{project}/{environment}/events
 ```
 
 ```text

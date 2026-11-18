@@ -17,7 +17,7 @@ How to use it: the package is prepared for the first npm release; until then, bu
 ```ts
 import { Client, newIdempotencyKey } from '@colophon-cms/sdk';
 
-const client = new Client({ baseUrl: 'http://localhost:8080', token });
+const client = new Client({ baseUrl: 'https://cms.example.com', token });
 const env = client.environment(projectId); // production by default
 const { data: draft, response } = await env.getEntry('posts', entryId);
 await env.saveEntry('posts', entryId, { ...draft.content, title: 'New title' },

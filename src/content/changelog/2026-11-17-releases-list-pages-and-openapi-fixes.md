@@ -13,7 +13,7 @@ docs:
 `GET /api/v1/projects/{project}/environments/{environment}/releases` used to stop at the newest 100 releases with `next_cursor` always `null`, although the OpenAPI document described a cursor. It now pages for real: `?limit=` takes 1–100 (default 100, what it answered before, so callers that never page see no change) and `?cursor=` takes the `next_cursor` of the previous page. A release published while you walk the pages lands above the first page, so a walk never skips or repeats one.
 
 ```sh
-curl "http://localhost:8080/api/v1/projects/{project}/environments/{environment}/releases?limit=50&cursor=<next_cursor>" \
+curl "https://cms.example.com/api/v1/projects/{project}/environments/{environment}/releases?limit=50&cursor=<next_cursor>" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

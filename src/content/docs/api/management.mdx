@@ -60,7 +60,7 @@ that creates something, or could be repeated by mistake, requires an `Idempotenc
 characters of `A–Z a–z 0–9 - _`, chosen by you, one per logical write.
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: create-ginger-biscuits-1" \
@@ -120,7 +120,7 @@ Send the **same request with the same key** again, as a retry after a timeout wo
 answer back, marked `idempotent-replayed: true`. No second entry is made:
 
 ```sh run=management
-curl -s -o /dev/null -D - -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -s -o /dev/null -D - -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: create-ginger-biscuits-1" \
@@ -135,7 +135,7 @@ idempotent-replayed: true
 The same key with a **different** body is a mistake, and is refused rather than guessed at:
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: create-ginger-biscuits-1" \
@@ -175,7 +175,7 @@ Reading an entry returns its current revision in the `ETag` header. A save must 
 so it can never overwrite a change it didn't see. A save is a new revision; nothing is ever written over.
 
 ```sh run=management
-curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
+curl -i -X PUT "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $ETAG" \
@@ -228,7 +228,7 @@ A save is the **whole** content: fields you leave out are cleared. Send everythi
 Now save again with the **old** ETag, as a second editor who loaded the entry earlier would:
 
 ```sh run=management
-curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
+curl -i -X PUT "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/$ENTRY" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $ETAG" \
@@ -267,7 +267,7 @@ The body is checked against the content type before anything is stored. A refusa
 `details.reason` and the place in `details.pointer`, a JSON Pointer into your body:
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: create-flapjacks-0001" \
@@ -307,7 +307,7 @@ numbered release. The steps, with the token:
 ### 1. Open a publish request
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/changesets" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: request-ginger-biscuits-1" \
@@ -382,7 +382,7 @@ export HASH='"sha256:…"'  # the etag header
 ### 2. Send it for review
 
 ```sh run=management
-curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/submit" \
+curl -s -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/submit" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "If-Match: $HASH" | grep -o '"state":"[a-z_]*"'
 ```
@@ -396,7 +396,7 @@ curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/pro
 A token can't approve a request that a token sent for review:
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $HASH" \
@@ -427,7 +427,7 @@ A reviewer approves it in the Studio (**Publish requests** → the request → *
 their own credential. Here the owner approves with their personal access token:
 
 ```sh run=management
-curl -s -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
+curl -s -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/reviews" \
   -H "Authorization: Bearer $PERSONAL_TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $HASH" \
@@ -447,7 +447,7 @@ Publishing goes on top of the release you have seen: send its number as `base_ge
 releases list, whose `colophon-generation` header names the newest release:
 
 ```sh run=management
-curl -s -o /dev/null -D - "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases?limit=1" \
+curl -s -o /dev/null -D - "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/releases?limit=1" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" | grep -i '^colophon-generation'
 ```
 
@@ -456,7 +456,7 @@ colophon-generation: 1
 ```
 
 ```sh run=management
-curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/publish" \
+curl -i -X POST "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/changesets/$REQUEST/publish" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $HASH" \
@@ -490,7 +490,7 @@ another release committed after the one you named, publishing is refused with `4
 ### 5. Read the receipt
 
 ```sh run=management
-curl -s "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/releases/2" \
+curl -s "https://cms.example.com/api/v1/projects/$PROJECT/environments/production/releases/2" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 

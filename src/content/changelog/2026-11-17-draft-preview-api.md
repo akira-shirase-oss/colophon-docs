@@ -13,7 +13,7 @@ docs:
 Your site can now show unpublished drafts to the people who are working on them. First tell Colophon where previews open, as a signed-in person (here with the personal token `colophon login` keeps):
 
 ```sh
-curl -X PUT http://localhost:8080/api/v1/projects/{project}/environments/{environment}/preview-target \
+curl -X PUT https://cms.example.com/api/v1/projects/{project}/environments/{environment}/preview-target \
   -H "Authorization: Bearer $COLOPHON_TOKEN" -H 'Content-Type: application/json' \
   -d '{"url_template":"https://example.com/api/preview?code={code}"}'
 ```

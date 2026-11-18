@@ -22,7 +22,7 @@ Three endpoints answer without a credential and are never rate-limited. Every an
 ### `/livez`
 
 ```sh run=ops
-curl -i http://localhost:8080/livez
+curl -i https://cms.example.com/livez
 ```
 
 ```http output=ops
@@ -42,7 +42,7 @@ that failed then would only make things worse.
 ### `/readyz`
 
 ```sh run=ops
-curl -i http://localhost:8080/readyz
+curl -i https://cms.example.com/readyz
 ```
 
 ```http output=ops
@@ -88,7 +88,7 @@ docker compose stop valkey
 {/* snippet ops: snippets/wait-ready.sh degraded */}
 
 ```sh run=ops
-curl -i http://localhost:8080/readyz
+curl -i https://cms.example.com/readyz
 ```
 
 ```http output=ops
@@ -128,7 +128,7 @@ A server without a cache at all is `ready`, with `"cache":"not_configured"`.
 ### `/version`
 
 ```sh run=ops
-curl -s http://localhost:8080/version
+curl -s https://cms.example.com/version
 ```
 
 ```json output=ops

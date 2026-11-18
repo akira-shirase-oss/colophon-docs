@@ -37,6 +37,18 @@ import { pathToFileURL } from 'node:url';
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const DOCS = join(ROOT, 'src/content/docs');
 const DEFAULT_BASE = 'http://localhost:8080';
+/**
+ * The address pages show. Examples use https://cms.example.com, a domain reserved for examples
+ * (RFC 2606); the quick start and installation pages show http://localhost:8080, where the reader
+ * really runs Colophon. Both run against the real stack (`--base`), and in outputs the stack's
+ * address and both shown addresses compare as one.
+ */
+export const EXAMPLE_BASE = 'https://cms.example.com';
+const LOCAL_PAGES = /(^|\/)(quick-start|installation)\.mdx$/;
+/** The address a page shows its examples with. */
+export const shownBase = (file) => (LOCAL_PAGES.test(file ?? '') ? DEFAULT_BASE : EXAMPLE_BASE);
+/** A block's code as it runs: either shown address becomes the stack's. */
+export const runnable = (code, stack = base) => code.replaceAll(EXAMPLE_BASE, stack).replaceAll(DEFAULT_BASE, stack);
 /** Suites in the order they run; later suites build on the state earlier ones leave. */
 const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'graphql', 'cli', 'sdk', 'mcp', 'ops'];
 
@@ -142,8 +154,8 @@ function indent(body) {
 }
 
 /** What the page shows: headers as they came, a JSON body indented. */
-export function display(text) {
-	const { head, body } = split(text.replace(new RegExp(escape(base), 'g'), DEFAULT_BASE));
+export function display(text, file) {
+	const { head, body } = split(text.replace(new RegExp(escape(base), 'g'), shownBase(file)));
 	const json = jsonBody(body);
 	const shown = json === null ? body.trimEnd() : (indent(body) ?? JSON.stringify(json, null, 2));
 	return head === null ? shown : shown === '' ? head : `${head}\n\n${shown}`;
@@ -153,7 +165,12 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** What is compared: values that differ on every run become placeholders. */
 export function normalise(text) {
-	const { head, body } = split(text.replace(new RegExp(escape(base), 'g'), DEFAULT_BASE));
+	const { head, body } = split(
+		text
+			.replace(new RegExp(escape(base), 'g'), '<base>')
+			.replaceAll(DEFAULT_BASE, '<base>')
+			.replaceAll(EXAMPLE_BASE, '<base>'),
+	);
 	const json = jsonBody(body);
 	const flatBody = json === null ? body.trim() : JSON.stringify(json);
 	const all = `${head ?? ''}\n\n${flatBody}`
@@ -209,7 +226,7 @@ function runAll(steps) {
 			lines.push(marker, `export SNIPPET_LAST=${JSON.stringify(lastOut)}`, `source ${JSON.stringify(join(ROOT, step.path))}${step.args ? ` ${step.args}` : ''}`);
 			return;
 		}
-		const code = step.code.replaceAll(DEFAULT_BASE, base);
+		const code = runnable(step.code);
 		const file = meta(step.info, 'file');
 		if (file) {
 			lines.push(marker, `cat > ${JSON.stringify(file)} <<'COLOPHON_DOCS_EOF'`, code, 'COLOPHON_DOCS_EOF');
@@ -273,7 +290,7 @@ function update(steps) {
 		for (const step of list.sort((a, b) => b.expect.start - a.expect.start)) {
 			const { indent, info, lang, start, end } = step.expect;
 			const fence = '```';
-			const body = display(step.actual)
+			const body = display(step.actual, step.file)
 				.split('\n')
 				.map((line) => (line === '' ? '' : `${indent}${line}`))
 				.join('\n');
