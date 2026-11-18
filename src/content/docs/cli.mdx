@@ -27,6 +27,8 @@ The image you built in the [quick start](/quick-start/) holds `colophon`. Run it
 from `colophon-cms/deploy/quickstart`. Inside the container, Colophon is at `http://127.0.0.1:8080`, and the
 container's file system is read-only except `/tmp`, so tell the CLI where both are:
 
+{/* snippet cli: snippets/cd.sh ../colophon-cms/deploy/quickstart */}
+
 ```sh run=cli
 alias colophon='docker compose exec -T -e COLOPHON_SERVER=http://127.0.0.1:8080 -e COLOPHON_CONFIG_DIR=/tmp/colophon colophon colophon'
 colophon --version

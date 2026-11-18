@@ -36,7 +36,7 @@ const ROOT = resolve(new URL('..', import.meta.url).pathname);
 const DOCS = join(ROOT, 'src/content/docs');
 const DEFAULT_BASE = 'http://localhost:8080';
 /** Suites in the order they run; later suites build on the state earlier ones leave. */
-const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'cli'];
+const SUITES = ['quickstart', 'tokens', 'management', 'delivery', 'errors', 'cli', 'sdk'];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
