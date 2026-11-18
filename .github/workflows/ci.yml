@@ -7,6 +7,7 @@
 #   privacy    the built site contacts no other host; the API reference's Test Request goes only to
 #              the server it is given and keeps no token after a reload.
 #   openapi    the API reference's copy of the OpenAPI document is byte-identical to colophon-cms main.
+#   coverage   every code block on every page runs, is a checked output, or says why it can't (not-run).
 #   snippets   Colophon is built from colophon-cms main and started with the quick start's own
 #              commands; then every command on the quick start and API pages runs, in order, and
 #              its output must match what the page shows (ids, times and secrets normalised).
@@ -42,6 +43,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Every code block runs, is a checked output, or says why not
+        run: node scripts/snippets.mjs --coverage
       - name: Build, validate internal links, check the output
         run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
