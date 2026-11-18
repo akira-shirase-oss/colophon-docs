@@ -16,7 +16,8 @@
     "check:openapi": "node scripts/sync-openapi.mjs --check",
     "snippets": "node scripts/snippets.mjs",
     "test": "node --test scripts/*.test.mjs",
-    "check:live": "node scripts/check-live.mjs"
+    "check:live": "node scripts/check-live.mjs",
+    "hooks": "git config core.hooksPath scripts/hooks"
   },
   "dependencies": {
     "@astrojs/rss": "4.0.19",
