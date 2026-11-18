@@ -24,7 +24,7 @@ first: some of these steps have been rehearsed end to end, and others are writte
 
 | Path | State |
 |---|---|
-| Quick start: database dump and uploads copy, and restoring them | Written down, **not yet drilled** end to end |
+| Quick start: database dump and uploads copy, and restoring them | Drilled end to end by this documentation site's CI, against Colophon's `main` branch, on every change to these pages and once a night: back up, remove every container and volume, install afresh, restore, and check that the published entries and the old API token are back. The CI quick start holds no uploads, so for them it proves only that the volume is copied and unpacked; not drilled on a released version |
 | Encrypted base backups, `verify` and the `daily` schedule | Rehearsed on the repository's development stack, on a laptop |
 | Retention (which backups to keep) | Proven on synthetic backups |
 | The staged restore onto clean infrastructure | Rehearsed on the development stack: deletions made after the backup were replayed, an edit made after it was absent, an in-flight job was held, and the restored server served |
@@ -64,9 +64,11 @@ volumes while you keep the `postgres` volume: they hold the generated passwords 
 
 ### Restore
 
-:::caution[Not yet drilled]
-These restore steps haven't been run end to end yet. Treat them as the plan, try them on a spare machine before you
-rely on them, and report what you find.
+:::note[Drilled in this site's CI]
+This site's CI runs these steps, exactly as written, against a quick start built from Colophon's `main` branch, on
+every change to these pages and once a night, and checks the result with step 6. It holds no uploads, so for uploads it
+proves only that the volume is copied and unpacked. It proves the steps, not your copies: restore your own backup on a spare machine before you rely on it. A production install (systemd or a
+managed database) has its own steps below, and its drill is yours to run.
 :::
 
 <Steps>

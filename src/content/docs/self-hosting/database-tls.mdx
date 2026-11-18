@@ -39,26 +39,86 @@ postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-ful
 
 ## What the refusal looks like
 
-The server names the host, what is wrong and how to fix it, and never prints the URL or its password:
+The server names the host, what is wrong and how to fix it, and never prints the URL or its password. You can
+watch it refuse in the quick start's folder: this function starts one extra `colophon-server` with the database
+URL you give it (in a file, as production does), prints what it said and its exit status, and removes the file:
 
-```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
+{/* snippet ops: snippets/cd-quickstart.sh */}
+
+```sh run=ops
+server_with_url() {
+  printf '%s' "$1" > database-url.test
+  docker compose --progress quiet run --rm --no-deps -T \
+    -v "$PWD/database-url.test:/run/test/database_url:ro" \
+    -e COLOPHON_DATABASE_URL_FILE=/run/test/database_url colophon
+  echo "exit status $?"
+  rm -f database-url.test
+}
+```
+
+`db.example.com` doesn't exist, so a server that tried to connect would fail differently; these refusals come
+before any connection. `sslmode=require`:
+
+```sh run=ops stderr=1 exit=0
+server_with_url 'postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=require'
+```
+
+```text output=ops
 Error: loading configuration
 
 Caused by:
     invalid configuration (1 problem(s)):
       COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=require encrypts but takes any certificate. Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+
+exit status 1
 ```
 
 A URL with no `sslmode` at all is refused the same way, as `prefer`:
 
-```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
-      COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=prefer falls back to plain text and takes any certificate (it is the default when the URL names none). Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+```sh run=ops stderr=1 exit=0
+server_with_url 'postgres://colophon_app:PASSWORD@db.example.com:5432/colophon'
+```
+
+```text output=ops
+Error: loading configuration
+
+Caused by:
+    invalid configuration (1 problem(s)):
+      COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=prefer falls back to plain text and takes any certificate (it is the default when the URL names no sslmode). Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+
+exit status 1
+```
+
+`verify-ca`, which checks the authority but not the name:
+
+```sh run=ops stderr=1 exit=0
+server_with_url 'postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-ca'
+```
+
+```text output=ops
+Error: loading configuration
+
+Caused by:
+    invalid configuration (1 problem(s)):
+      COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=verify-ca doesn't check that the certificate names the host, and this driver trusts the public roots as well as sslrootcert, so any publicly trusted certificate passes. Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
+
+exit status 1
 ```
 
 And `channel_binding=require`, even with `verify-full`:
 
-```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
+```sh run=ops stderr=1 exit=0
+server_with_url 'postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-full&channel_binding=require'
+```
+
+```text output=ops
+Error: loading configuration
+
+Caused by:
+    invalid configuration (1 problem(s)):
       COLOPHON_DATABASE_URL: database URL refused: channel_binding=require can't be honoured: this driver doesn't do channel binding and would ignore it. Remove channel_binding from the URL; sslmode=verify-full is what proves the server is the database
+
+exit status 1
 ```
 
 The CLI prints the same reason on one line, then exits `2`. In the quick start's folder, with a `sslmode=require`
