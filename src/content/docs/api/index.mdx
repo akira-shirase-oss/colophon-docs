@@ -31,7 +31,7 @@ Published content only, from the release you ask for (the latest by default). An
 number (`Colophon-Generation`), an `ETag` for conditional requests, and cache headers a CDN understands. A
 draft can never appear here: the delivery path reads with a database role that can't see drafts.
 
-```sh
+```sh run=management
 curl "http://localhost:8080/content/v1/$PROJECT/production/recipes"
 ```
 
@@ -46,7 +46,7 @@ Everything the Studio can do, under `/api/v1`. Writes are protected against the 
 network: a lost answer (`Idempotency-Key` makes a retry return the first result) and a lost update
 (`If-Match` refuses a save made on a version that is no longer current).
 
-```sh
+```sh run=management
 curl "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```

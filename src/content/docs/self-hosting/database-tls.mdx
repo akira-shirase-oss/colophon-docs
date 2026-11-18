@@ -33,7 +33,7 @@ The rule is checked before any connection is made, and applies to both URLs Colo
 
 A good URL looks like this:
 
-```text
+```text not-run="a URL's shape"
 postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-full
 ```
 
@@ -41,7 +41,7 @@ postgres://colophon_app:PASSWORD@db.example.com:5432/colophon?sslmode=verify-ful
 
 The server names the host, what is wrong and how to fix it, and never prints the URL or its password:
 
-```text
+```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
 Error: loading configuration
 
 Caused by:
@@ -51,23 +51,27 @@ Caused by:
 
 A URL with no `sslmode` at all is refused the same way, as `prefer`:
 
-```text
+```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
       COLOPHON_DATABASE_URL: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=prefer falls back to plain text and takes any certificate (it is the default when the URL names none). Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
 ```
 
 And `channel_binding=require`, even with `verify-full`:
 
-```text
+```text not-run="the server's refusal; the CLI's, below, runs in CI and makes the same check"
       COLOPHON_DATABASE_URL: database URL refused: channel_binding=require can't be honoured: this driver doesn't do channel binding and would ignore it. Remove channel_binding from the URL; sslmode=verify-full is what proves the server is the database
 ```
 
-The CLI prints the same reason on one line, then exits `2`:
+The CLI prints the same reason on one line, then exits `2`. In the quick start's folder, with a `sslmode=require`
+URL for a database on another host:
 
-```sh
-colophon admin migrate-status   # with COLOPHON_MIGRATION_DATABASE_URL set to a sslmode=require URL
+{/* snippet ops: snippets/cd-quickstart.sh */}
+
+```sh run=ops stderr=1 exit=2
+docker compose exec -T -e COLOPHON_MIGRATION_DATABASE_URL='postgres://colophon@db.example.com:5432/colophon?sslmode=require' \
+  colophon colophon admin migrate-status
 ```
 
-```text
+```text output=ops
 error: database URL refused: the database at db.example.com isn't checked to be who it says it is: sslmode=require encrypts but takes any certificate. Use sslmode=verify-full, with sslrootcert=<CA file> if a private authority signs its certificate; only a loopback host or a Unix socket may go without
 ```
 
@@ -82,7 +86,7 @@ host and in the container.
 - **A certificate from your own authority**: add `sslrootcert=` with the path of the authority's certificate
   (PEM). It is added to the built-in roots, not used instead of them.
 
-  ```text
+  ```text not-run="a URL's shape"
   postgres://colophon_app:PASSWORD@db.internal.example:5432/colophon?sslmode=verify-full&sslrootcert=/etc/colophon/db-ca.pem
   ```
 
@@ -137,7 +141,7 @@ Colophon uses two different database logins, and they should never be swapped:
 
 Both follow the same TLS rule. The [Installation](/installation/) guide makes them in this order:
 
-```sh
+```sh not-run="a production install under systemd"
 sudo install -d -m 0700 /etc/colophon/credentials
 head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' | sudo tee /etc/colophon/credentials/app_password >/dev/null
 echo 'postgres://owner:…@db.example.com/colophon?sslmode=verify-full' | sudo tee /etc/colophon/credentials/migration_database_url >/dev/null
@@ -150,7 +154,7 @@ sudo colophon admin migrate --database-url-file /etc/colophon/credentials/migrat
 Then `/etc/colophon/credentials/database_url` holds the server's URL, with the same host and the same
 `sslmode=verify-full`:
 
-```text
+```text not-run="a URL's shape"
 postgres://colophon_app:<app_password>@db.example.com/colophon?sslmode=verify-full
 ```
 
@@ -164,11 +168,11 @@ to `/etc/colophon/credentials/database_url`, and restart the server.
 Before starting the server, `colophon admin migrate-status` only reads, and proves the migration login connects
 with verified TLS:
 
-```sh
+```sh not-run="a production install under systemd"
 sudo colophon admin migrate-status --database-url-file /etc/colophon/credentials/migration_database_url
 ```
 
-```text
+```text not-run="the answer to the command above"
 schema current: 68 migrations applied, none of 68 pending
 ```
 

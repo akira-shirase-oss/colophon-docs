@@ -32,7 +32,7 @@ enough alone.
   CLI's device sign-in, and your site users' sign-up, sign-in and sign-in links) read at most 16 KiB, whatever
   `COLOPHON_MAX_BODY_BYTES` allows:
 
-  ```http
+  ```http not-run="todo: shown without its request"
   HTTP/1.1 413 Payload Too Large
   content-type: application/json
   x-request-id: 01a1ee86-b830-70e1-b65b-af6843a786cb
@@ -116,7 +116,7 @@ on a server others can reach.
 
 The Studio is served with headers that stop other sites framing it or sniffing its files:
 
-```http
+```http not-run="todo: shown without its request"
 x-content-type-options: nosniff
 x-frame-options: DENY
 content-security-policy: frame-ancestors 'none'

@@ -181,6 +181,13 @@ const operations = Object.values(spec.paths).reduce(
 				agent: { disabled: true },
 				hideClientButton: false,
 				persistAuth: false,
+				// No request proxy. Test Request goes straight from the reader's browser to the server they
+				// chose, never through proxy.scalar.com. Scalar 1.76 uses an explicit proxyUrl as given, and an
+				// empty one means no proxy. Left unset, it falls back to its hosted proxy only in its own
+				// "web" layout, which this page doesn't use. The empty value pins that down across upgrades,
+				// and CI's privacy job (scripts/check-privacy.mjs) fails if a version starts proxying anyway. It
+				// tries a remote https server as well as a local one, because Scalar never proxies localhost.
+				proxyUrl: '',
 				metaData: { title: 'API reference · Colophon Docs' },
 				customCss: `
 					.scalar-app, .scalar-api-reference { --scalar-font: 'Geist', ui-sans-serif, system-ui, sans-serif; --scalar-font-code: ui-monospace, SFMono-Regular, Menlo, monospace; }

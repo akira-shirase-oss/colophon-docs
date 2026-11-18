@@ -16,37 +16,39 @@ the SDK knows. It is ESM only, has no runtime dependencies, and runs on Node.js 
 
 ## Install it from a clone
 
+{/* snippet sdk: snippets/sdk-start.sh */}
+
 <Steps>
 
 1. **Build the package.** `@colophon-cms/sdk` isn't on npm yet, so build its package from a clone of the
    repository:
 
-   ```sh
+   ```sh not-run="the quick start runs these same commands in the same clone, and checks them"
    git clone https://github.com/akira-shirase-oss/colophon-cms.git
    cd colophon-cms
    npm ci --workspace @colophon-cms/sdk --include-workspace-root=false --no-audit --no-fund >/dev/null
    npm pack --workspace @colophon-cms/sdk --silent
    ```
 
-   ```text
+   ```text not-run="the quick start checks this output"
    colophon-cms-sdk-0.1.0-alpha.1.tgz
    ```
 
 2. **Build the rich-text renderer too, if you show rich text.** `@colophon-cms/rich-text` turns a rich-text
    field into HTML. It isn't on npm either; pack it the same way:
 
-   ```sh
+   ```sh run=sdk
    npm ci --workspace @colophon-cms/rich-text --include-workspace-root=false --no-audit --no-fund >/dev/null
    npm pack --workspace @colophon-cms/rich-text --silent
    ```
 
-   ```text
+   ```text output=sdk
    colophon-cms-rich-text-0.1.0-alpha.1.tgz
    ```
 
 3. **Install the tarballs** into your own project, beside the clone:
 
-   ```sh
+   ```sh run=sdk
    mkdir ../recipe-script && cd ../recipe-script
    npm init -y >/dev/null
    npm install --no-audit --no-fund \
@@ -61,7 +63,7 @@ project "Field notes" with its `recipes`, and `PROJECT` and `COLOPHON_TOKEN` in 
 
 ## Make a client
 
-```js
+```js not-run="a fragment: the options a client takes"
 import { Client } from '@colophon-cms/sdk';
 
 const client = new Client({ baseUrl: 'http://localhost:8080', token: process.env.COLOPHON_TOKEN });
@@ -108,7 +110,7 @@ can't read.
 
 Save this as `read.mjs`:
 
-```js title="read.mjs"
+```js title="read.mjs" run=sdk file=read.mjs
 import { Client, ApiError, mediaFor } from '@colophon-cms/sdk';
 import { renderToHtml } from '@colophon-cms/rich-text';
 
@@ -148,11 +150,11 @@ try {
 }
 ```
 
-```sh
+```sh run=sdk
 node read.mjs
 ```
 
-```text
+```text output=sdk
 published: [ 'Lemon tart' ] etag: "5a53d3b764fde469e9d76ec852d5faaf"
 <p>Blind-bake the pastry, then fill it with lemon curd and bake until just set.</p>
 release 1, under an hour: [ { dish: 'Lemon tart', minutes: 45 } ]
@@ -235,7 +237,7 @@ Writes name their guards as options, and the SDK makes them required where the r
 
 Save this as `write.mjs`:
 
-```js title="write.mjs"
+```js title="write.mjs" run=sdk file=write.mjs
 import { Client, ApiError, newIdempotencyKey } from '@colophon-cms/sdk';
 
 const baseUrl = 'http://localhost:8080';
@@ -292,11 +294,11 @@ try {
 }
 ```
 
-```sh
+```sh run=sdk
 node write.mjs
 ```
 
-```text
+```text output=sdk
 kind: token actions: 8
 created: 01a1ee85-afa4-779f-895f-42780642e364 201 false
 retried: 01a1ee85-afa4-779f-895f-42780642e364 201 true
@@ -324,7 +326,7 @@ Once a person has approved the request (in the Studio, **Publish requests** → 
 version**), the token may publish it. `base_generation` is the newest release you have seen, `0` before the
 first:
 
-```js
+```js not-run="continues write.mjs after a person approves the request; the same publish runs on the Management API page"
 const { response: current } = await cms.getChangeset(request.data.id);
 const releases = await cms.listReleases();
 const release = await cms.publishChangeset(
@@ -443,8 +445,8 @@ Branch on `code` and `reason`. The codes the SDK raises itself:
 The client never retries by itself. When you retry a write, send the **same** idempotency key, so a write
 whose answer was lost isn't made twice:
 
-```js
-import { ApiError, newIdempotencyKey } from '@colophon-cms/sdk';
+```js title="retry.mjs" run=sdk file=retry.mjs
+import { ApiError, Client, newIdempotencyKey } from '@colophon-cms/sdk';
 
 // One key for the logical write, reused by every attempt.
 async function createWithRetry(cms, collection, document, attempts = 3) {
@@ -459,16 +461,27 @@ async function createWithRetry(cms, collection, document, attempts = 3) {
     }
   }
 }
+
+// Against a server that isn't there:
+const cms = new Client({ baseUrl: 'http://127.0.0.1:9', token: 'not-a-real-token', compat: 'off' }).environment('field-notes');
+try {
+  await createWithRetry(cms, 'recipes', { dish: 'Parkin', minutes: 90 });
+} catch (error) {
+  console.log('gave up:', error.code, error.retryable);
+}
 ```
 
-Against a server that isn't there:
+```sh run=sdk
+node retry.mjs
+```
 
-```text
+```text output=sdk
 attempt 1: no_answer, trying again with the same key
 attempt 2: no_answer, trying again with the same key
+gave up: no_answer true
 ```
 
-and the third failure is thrown. A `409`, `403` or `422` answers the same every time, so `retryable` is
+The third failure is thrown. A `409`, `403` or `422` answers the same every time, so `retryable` is
 `false` for them.
 
 If you call the API with your own `fetch`, `errorOf(body)` reads a parsed body as the error envelope's `error`
@@ -481,12 +494,18 @@ version (any `0.1.x` with any `0.1.x`), the server must serve API `v1`, and it m
 server this SDK supports (`OLDEST_SERVER`, `0.1.0-alpha.1`). The `colophon` CLI uses the same rule.
 `client.compatibility()` reads the server's `/version` and says whether it fits:
 
-```js
+```js title="fit.mjs" run=sdk file=fit.mjs
+import { Client } from '@colophon-cms/sdk';
+
 const fit = await new Client({ baseUrl: 'http://localhost:8080' }).compatibility();
 console.log(fit);
 ```
 
-```text
+```sh run=sdk
+node fit.mjs
+```
+
+```text output=sdk
 {
   compatible: true,
   sdk: '0.1.0-alpha.1',
@@ -498,7 +517,7 @@ console.log(fit);
 When it doesn't fit, `misfit` is a stable code (`api_dropped`, `api_not_yet`, `later_line`, `earlier_line`,
 `before_oldest`, `no_version_report`) and `reason` says which side to upgrade. Against a server on 0.2.0:
 
-```text
+```text not-run="needs a server on another minor version"
 @colophon-cms/sdk 0.1.0-alpha.1 is too old for the server at http://localhost:8080, which runs 0.2.0: before 1.0 each minor release may change the API, so the SDK and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install @colophon-cms/sdk@0.2.0 to match it.
 ```
 

@@ -46,7 +46,7 @@ A burst of 330 requests at once with one made-up token: about 300 were admitted 
 `401 unauthorized`, since the token doesn't exist), and the last 23 were refused by the per-credential
 limit:
 
-```http
+```http not-run="todo: needs a burst of requests past the limit"
 HTTP/1.1 429 Too Many Requests
 content-type: application/json
 retry-after: 1
@@ -90,7 +90,7 @@ A rate is one of:
 Each number is from 1 to 1,000,000. A value that is none of these stops the server from starting, with a
 message naming the setting.
 
-```sh
+```sh not-run="settings for an env file"
 COLOPHON_RATE_LIMIT_DELIVERY=2000/4000
 COLOPHON_RATE_LIMIT_PER_CREDENTIAL=off
 ```
@@ -163,7 +163,7 @@ Two things that look like limits answer differently on purpose:
 The [SDK](/sdk/) turns `Retry-After` into `retryAfterMs` (at most a minute) on its `ApiError`, beside
 `retryable`; it doesn't retry by itself, so the waiting stays in your code:
 
-```ts
+```ts not-run="a fragment of your own code"
 import { ApiError } from '@colophon-cms/sdk';
 
 async function withRetry<T>(call: () => Promise<T>, attempts = 4): Promise<T> {

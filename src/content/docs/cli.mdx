@@ -27,12 +27,14 @@ The image you built in the [quick start](/quick-start/) holds `colophon`. Run it
 from `colophon-cms/deploy/quickstart`. Inside the container, Colophon is at `http://127.0.0.1:8080`, and the
 container's file system is read-only except `/tmp`, so tell the CLI where both are:
 
-```sh
+{/* snippet cli: snippets/cd.sh ../colophon-cms/deploy/quickstart */}
+
+```sh run=cli
 alias colophon='docker compose exec -T -e COLOPHON_SERVER=http://127.0.0.1:8080 -e COLOPHON_CONFIG_DIR=/tmp/colophon colophon colophon'
 colophon --version
 ```
 
-```text
+```text output=cli
 colophon 0.1.0-alpha.1 (commit …, built 2026-11-18)
 ```
 
@@ -46,7 +48,7 @@ The CLI is one binary. Building it needs Rust 1.99 or newer; with [rustup](https
 repository's `rust-toolchain.toml` picks the exact compiler Colophon is built with (1.99.1). A Rust installed
 another way ignores that file and uses whatever version it is. No database is needed to compile:
 
-```sh
+```sh not-run="builds Colophon from source; CI runs the CLI from the quick start's image"
 git clone https://github.com/akira-shirase-oss/colophon-cms.git
 cd colophon-cms
 cargo build --release --locked -p colophon-cli
@@ -66,11 +68,11 @@ The CLI's default server is `http://localhost:58000`, not the quick start's `htt
 `colophon doctor` asks a server whether it is ready, and which dependency isn't. It reads the server's
 `/readyz`, so it reports exactly what a load balancer sees, and it needs no sign-in.
 
-```sh
+```sh run=cli
 colophon doctor
 ```
 
-```text
+```text output=cli
 server    http://127.0.0.1:8080
 role      all
 status    ready
@@ -81,12 +83,19 @@ database  up
 It exits `0` when the server is ready and `5` when it is degraded, not ready or unreachable; a `--server`
 that isn't an `http(s)` URL exits `2`, and an answer that isn't a readiness report exits `6`:
 
-```sh
+```sh run=cli exit=5
 colophon doctor --server http://localhost:58000 --json
 ```
 
-```json
-{"command":"doctor","error":{"code":"unreachable","message":"http://localhost:58000: connection failed"},"version":2}
+```json output=cli
+{
+  "command": "doctor",
+  "error": {
+    "code": "unreachable",
+    "message": "http://localhost:58000: connection failed"
+  },
+  "version": 2
+}
 ```
 
 | Flag | Default | |
@@ -101,11 +110,11 @@ colophon doctor --server http://localhost:58000 --json
 
 1. **Start the sign-in.** `colophon login` asks the server for a code and prints a link:
 
-   ```sh
+   ```sh not-run="waits for a person to allow it in a browser; CI makes the same sign-in, allowed through the API"
    colophon login
    ```
 
-   ```text
+   ```text not-run="the code is new every time"
    To sign in, open this link in a browser where you're signed in to Colophon:
      http://localhost:8080/studio/device?code=FMTT-4ZP8
    and check that it shows the code FMTT-4ZP8.
@@ -118,20 +127,22 @@ colophon doctor --server http://localhost:58000 --json
 
 3. **The terminal is signed in.** The CLI receives a personal access token that acts as you for 30 days:
 
-   ```text
+   ```text not-run="the expiry is 30 days from now"
    Signed in to http://127.0.0.1:8080 as Akira Shirase (profile default, until 2026-12-18T12:00:56.252181845Z).
    ```
 
 </Steps>
 
+{/* snippet cli: snippets/cli-login.sh */}
+
 `colophon whoami` says who the saved sign-in is and lists your projects, with each one's URL name and your
 role:
 
-```sh
+```sh run=cli
 colophon whoami
 ```
 
-```text
+```text output=cli
 Akira Shirase on http://127.0.0.1:8080, administrator
   subject akira@example.com at password
   field-notes  Field notes  (owner)
@@ -140,13 +151,15 @@ Akira Shirase on http://127.0.0.1:8080, administrator
 `colophon logout` revokes the token on the server and forgets it. If the token was already revoked or
 expired, it just forgets it.
 
-```sh
+```sh run=cli
 colophon logout
 ```
 
-```text
+```text output=cli
 Signed out of http://127.0.0.1:8080 (profile default).
 ```
+
+{/* snippet cli: snippets/cli-login.sh */}
 
 | Command | Flags |
 |---|---|
@@ -165,7 +178,7 @@ Signed out of http://127.0.0.1:8080 (profile default).
 It holds one **profile** per name, each with its server, token and expiry. `default` is used unless
 `--profile` names another, so one person can be signed in to several servers:
 
-```sh
+```sh not-run="a second server, which CI doesn't have"
 colophon login --server https://cms.example.com --profile work
 colophon whoami --profile work
 ```
@@ -186,7 +199,7 @@ Before anything else, `login`, `whoami` and every command that works in a projec
 must be on the same minor version (any `0.1.x` with any `0.1.x`), the server must serve API `v1`, and it must
 be at least `0.1.0-alpha.1`. A misfit exits `2` and says which side to upgrade. Against a server on 0.2.0:
 
-```text
+```text not-run="needs a server on another minor version"
 error: colophon 0.1.0-alpha.1 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so colophon and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install colophon 0.2.0 to match it (https://github.com/akira-shirase-oss/colophon-cms/releases).
 ```
 
@@ -206,11 +219,11 @@ Every command below takes:
 
 A project you aren't a member of is refused before the command does anything, and exits `3`:
 
-```sh
+```sh run=cli stderr=1 exit=3
 colophon content list --project nope recipes
 ```
 
-```text
+```text output=cli
 error: no project "nope" that you're a member of
 ```
 
@@ -224,58 +237,60 @@ error: no project "nope" that you're a member of
 | `content import <collection>` | Import entries in one transaction, or none | `--data` or `--file` (JSONL, a JSON array, or a Strapi or Sanity export); `--dry-run`; `--type` (the Sanity `_type` to take); `--idempotency-key` |
 | `content export <collection>` | Every draft as JSONL, the file `content import` takes back | |
 
-```sh
+```sh run=cli
 colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": 35}'
 ```
 
-```text
+```text output=cli
 Created recipes 01a1ee88-5797-75c8-a330-100cf0e41491 (Eccles cakes)
 ```
 
+{/* snippet cli: snippets/from-last.sh ENTRY=uuid:1 */}
+
 Content that doesn't fit the content type is refused with the field's pointer, and exits `2`:
 
-```sh
+```sh run=cli stderr=1 exit=2
 colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": "thirty"}'
 ```
 
-```text
+```text output=cli
 error: Minutes is a number (at /minutes) [HTTP 422]
 ```
 
-```sh
+```sh run=cli
 colophon content list --project field-notes recipes
 ```
 
-```text
-01a1ee88-5797-75c8-a330-100cf0e41491  2026-11-18T12:01:15.158931Z  Eccles cakes
-01a1ee86-e419-766d-bf99-9094106e5799  2026-11-18T11:59:40.056335Z  Bakewell tart
-01a1ee85-d1b6-7564-994a-65b55a75b012  2026-11-18T11:58:37.104331Z  Treacle tart
-01a1ee84-8d34-71ed-83b2-c33fd5ee4e1d  2026-11-18T11:57:06.738466Z  Flapjacks
-01a1ee84-8d1c-760a-82a7-f39ca86a9e1b  2026-11-18T11:57:06.714491Z  Ginger biscuits
-01a1ee81-13ee-70ff-9989-321e046286f8  2026-11-18T11:53:19.160733Z  Lemon tart
+```text output=cli
+01a1ef23-07e2-7709-b239-a8f8b53b95b6  2026-11-18T14:50:12.825433Z  Eccles cakes
+01a1ef22-d5e6-72b5-a00e-16cfe2088690  2026-11-18T14:50:00.172526Z  Ginger biscuits
+01a1ef22-cdf3-76cc-b098-e5bb5ab73575  2026-11-18T14:49:57.963425Z  Scones
+01a1ef22-b541-7496-a701-74e3e741dba1  2026-11-18T14:49:51.679508Z  Shortbread
+01a1ef22-b3f8-7489-a715-ca1b0d3aa479  2026-11-18T14:49:51.405677Z  Lemon tart
 ```
 
 A query takes the same document as the delivery API's, over drafts; the field must be filterable:
 
-```sh
+```sh run=cli
 colophon content query --project field-notes recipes \
   --data '{"filters": [{"field": "minutes", "op": "lte", "value": 40}], "sort": [{"field": "minutes", "dir": "asc"}], "fields": ["dish", "minutes"]}'
 ```
 
-```text
-01a1ee84-8d1c-760a-82a7-f39ca86a9e1b  2026-11-18T11:57:06.714491Z  Ginger biscuits
-01a1ee84-8d34-71ed-83b2-c33fd5ee4e1d  2026-11-18T11:57:06.738466Z  Flapjacks
-01a1ee88-5797-75c8-a330-100cf0e41491  2026-11-18T12:01:15.158931Z  Eccles cakes
+```text output=cli
+01a1ef22-d5e6-72b5-a00e-16cfe2088690  2026-11-18T14:50:00.172526Z  Ginger biscuits
+01a1ef22-cdf3-76cc-b098-e5bb5ab73575  2026-11-18T14:49:57.963425Z  Scones
+01a1ef22-b541-7496-a701-74e3e741dba1  2026-11-18T14:49:51.679508Z  Shortbread
+01a1ef23-07e2-7709-b239-a8f8b53b95b6  2026-11-18T14:50:12.825433Z  Eccles cakes
 ```
 
 `--dry-run` plans an import item by item and writes nothing:
 
-```sh
+```sh run=cli
 colophon content import --project field-notes recipes --dry-run \
   --data '[{"dish": "Parkin", "minutes": 90}, {"dish": "Rock cakes", "minutes": "twenty"}]'
 ```
 
-```text
+```text output=cli
 Plan for recipes: 1 would create, 1 invalid.
   /1 invalid: Minutes is a number (wrong_type at /1/minutes)
 ```
@@ -283,12 +298,12 @@ Plan for recipes: 1 would create, 1 invalid.
 `content export` writes the file to standard output, one content document a line, and its summary to
 standard error:
 
-```sh
+```sh run=cli stderr=1
 colophon content export --project field-notes recipes > recipes.jsonl
 ```
 
-```text
-Exported 7 entries from recipes.
+```text output=cli
+Exported 5 entries from recipes.
 ```
 
 ### `release`
@@ -300,19 +315,21 @@ Releases and their receipts, read only.
 | `release list` | The environment's releases, newest first (`--jsonl` for one object per release) |
 | `release show <generation>` | One release's receipt: its publish request, counts, deliveries and what site checks saw |
 
-```sh
+```sh run=cli
 colophon release list --project field-notes
 ```
 
-```text
-generation 1  2026-11-18T11:53:19.3253Z  published  Lemon tart
+```text output=cli
+generation 3  2026-11-18T14:50:01.247768Z  published  Ginger biscuits
+generation 2  2026-11-18T14:50:00.410759Z  published  Add ginger biscuits
+generation 1  2026-11-18T14:49:51.553931Z  published  Lemon tart
 ```
 
-```sh
+```sh run=cli
 colophon release show --project field-notes 1
 ```
 
-```text
+```text output=cli
 Release 1 — published
   published 2026-11-18T11:53:19.3253Z by Akira Shirase
   changeset 01a1ee81-1463-72f1-bfd8-7ead078ecf00 (Lemon tart)
@@ -332,30 +349,36 @@ See [Releases and receipts](/concepts/#releases-and-receipts) for what a receipt
 | `task create` | A task on an entry | `--entry` and `--title` (required, at most 200 characters); `--revision`; `--changeset`; `--assignee`; `--idempotency-key` |
 | `task update <task>` | Change its title, assignee or status | `--if-match` (required); `--title`; `--assignee` or `--unassign`; `--status`; `--idempotency-key` |
 
-```sh
-colophon comment create --project field-notes recipes 01a1ee88-5797-75c8-a330-100cf0e41491 \
-  --revision 01a1ee88-5797-75c8-a330-100bdd196501 --field minutes --body "Is 35 minutes right for a fan oven?"
-colophon task create --project field-notes --entry 01a1ee88-5797-75c8-a330-100cf0e41491 --title "Check the baking time"
+A comment is on one revision of the entry. Here `ENTRY` is the id `content create` printed above, and the
+revision is the entry's current one, from `content list --json`:
+
+```sh run=cli
+REVISION=$(colophon content list --project field-notes recipes --json |
+  jq -r --arg id "$ENTRY" '.data.entries[] | select(.id == $id) | .revision.id')
+colophon comment create --project field-notes recipes "$ENTRY" \
+  --revision "$REVISION" --field minutes --body "Is 35 minutes right for a fan oven?"
+colophon task create --project field-notes --entry "$ENTRY" --title "Check the baking time"
 colophon task list --project field-notes
 ```
 
-```text
+```text output=cli
 Created comment 01a1ee88-e98d-7438-87da-517f8987e772 on recipes/01a1ee88-5797-75c8-a330-100cf0e41491
 Created task 01a1ee88-ea69-7448-af93-81d03c2a1b4f (Check the baking time)
 01a1ee88-ea69-7448-af93-81d03c2a1b4f  open  Check the baking time  sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d
 ```
 
 The last column is the task's `ETag`. `task update` sends it as `--if-match`, so it changes exactly the task
-you looked at. A second update with the same, now stale, `ETag` is a conflict and exits `4`:
+you looked at. A second update with the same, now stale, `ETag` is a conflict and exits `4` (`TASK` and
+`ETAG` are the first and last columns above):
 
-```sh
-colophon task update --project field-notes 01a1ee88-ea69-7448-af93-81d03c2a1b4f \
-  --if-match sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d --status done
-colophon task update --project field-notes 01a1ee88-ea69-7448-af93-81d03c2a1b4f \
-  --if-match sha256:cb669e65383a95e14483c56efa48a8540b9653562fd9bd2fca8447b88d13d94d --status open
+{/* snippet cli: snippets/from-last.sh TASK=uuid:3 ETAG=match:sha256:[0-9a-f]{64} */}
+
+```sh run=cli stderr=1 exit=4
+colophon task update --project field-notes "$TASK" --if-match "$ETAG" --status done
+colophon task update --project field-notes "$TASK" --if-match "$ETAG" --status open
 ```
 
-```text
+```text output=cli
 Updated: task 01a1ee88-ea69-7448-af93-81d03c2a1b4f is now done
 error: the task has changed since you loaded it; load it again and check what changed [HTTP 409]
 ```
@@ -389,7 +412,11 @@ on your own site; `--changeset <id>` previews a publish request instead, and `--
 sets how long the preview lasts. The address works once, within a minute. The project needs a preview address
 first; without one:
 
-```text
+```sh run=cli stderr=1 exit=2
+colophon preview --project field-notes "$ENTRY"
+```
+
+```text output=cli
 error: this project has no preview address yet; set one in Settings → Website connections [HTTP 422]
 ```
 
@@ -402,14 +429,14 @@ See [Preview](/studio/preview/).
 `--json` prints exactly one JSON object on standard output: `version` (the output format's version, `2`),
 `command` and `data`, or `error` in place of `data` when the command failed.
 
-```sh
+```sh run=cli
 colophon content list --project field-notes recipes --limit 1 --json
 ```
 
 <details>
 <summary>Output, formatted here</summary>
 
-```json
+```json output=cli
 {
   "command": "content list",
   "data": {
@@ -444,23 +471,42 @@ colophon content list --project field-notes recipes --limit 1 --json
 A refusal from the API arrives whole, as the [error envelope](/api/errors/) has it: `code`, `message`,
 `details` and `request_id`.
 
-```sh
+```sh run=cli exit=2
 colophon content create --project field-notes recipes --data '{"dish": "Eccles cakes", "minutes": "thirty"}' --json
 ```
 
-```json
-{"command":"content create","error":{"code":"validation_failed","details":{"pointer":"/minutes","reason":"wrong_type"},"message":"Minutes is a number","request_id":"01a1ee88-584e-7650-828d-f2a8e1617719"},"version":2}
+```json output=cli
+{
+  "command": "content create",
+  "error": {
+    "code": "validation_failed",
+    "details": {
+      "pointer": "/minutes",
+      "reason": "wrong_type"
+    },
+    "message": "Minutes is a number",
+    "request_id": "01a1ef23-f9a6-77bc-8f18-6bf7820e294c"
+  },
+  "version": 2
+}
 ```
 
 A failure the CLI raised itself has `code` set to its exit class (`usage`, `denied`, `conflict`,
 `unavailable`, `internal`); `doctor` uses `invalid_server`, `unreachable` and `unexpected_reply`.
 
-```sh
+```sh run=cli exit=3
 colophon whoami --profile staging --json
 ```
 
-```json
-{"command":"whoami","error":{"code":"denied","message":"not signed in (profile \"staging\"); run `colophon login`"},"version":2}
+```json output=cli
+{
+  "command": "whoami",
+  "error": {
+    "code": "denied",
+    "message": "not signed in (profile \"staging\"); run `colophon login`"
+  },
+  "version": 2
+}
 ```
 
 `--jsonl`, on the list commands, prints one object per item, each in the same envelope, as its page arrives,

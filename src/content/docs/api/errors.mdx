@@ -10,7 +10,7 @@ a document runs: its errors are GraphQL errors carrying the same codes.)
 
 ## The envelope
 
-```json
+```json not-run="the shape of every error; the live examples below show it"
 {
   "error": {
     "code": "conflict",
@@ -38,20 +38,26 @@ don't know by its `code`.
 You may send your own `x-request-id` (1 to 64 characters of letters, digits, `.`, `_` and `-`), and the server
 uses it instead of making one, so a request can be followed from your logs into Colophon's:
 
-```sh
+```sh run=errors
 curl -i "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries/not-a-uuid" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "x-request-id: build-4711.fetch-recipes"
 ```
 
-```http
+```http output=errors
 HTTP/1.1 404 Not Found
 content-type: application/json
 x-request-id: build-4711.fetch-recipes
 content-length: 99
-date: Wed, 18 Nov 2026 12:16:17 GMT
+date: Wed, 18 Nov 2026 14:47:12 GMT
 
-{"error":{"code":"not_found","message":"no such resource","request_id":"build-4711.fetch-recipes"}}
+{
+  "error": {
+    "code": "not_found",
+    "message": "no such resource",
+    "request_id": "build-4711.fetch-recipes"
+  }
+}
 ```
 
 An id that breaks those rules is replaced with a fresh one.
@@ -213,25 +219,25 @@ See [Rate limits](/api/rate-limits/) for what is counted.
 
 **A write without an `Idempotency-Key`:**
 
-```sh
+```sh run=errors
 curl -i -X POST "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"dish": "Scones", "minutes": 25}'
 ```
 
-```http
+```http output=errors
 HTTP/1.1 428 Precondition Required
 content-type: application/json
-x-request-id: 01a1ee92-9555-77ad-8c4f-f30266998c90
+x-request-id: 01a1ef20-4818-72a2-a398-0954b2e12443
 content-length: 151
-date: Wed, 18 Nov 2026 12:12:26 GMT
+date: Wed, 18 Nov 2026 14:47:12 GMT
 
 {
   "error": {
     "code": "precondition_required",
     "message": "this request needs an Idempotency-Key header",
-    "request_id": "01a1ee92-9555-77ad-8c4f-f30266998c90"
+    "request_id": "01a1ef20-4818-72a2-a398-0954b2e12443"
   }
 }
 ```
@@ -239,7 +245,7 @@ date: Wed, 18 Nov 2026 12:12:26 GMT
 **Publishing on top of a release that is no longer the newest.** The environment was at release 1; the
 request said `"base_generation": 0`:
 
-```http
+```http not-run="a race between two publishers; its message names whichever release won"
 HTTP/1.1 409 Conflict
 content-type: application/json
 colophon-generation: 1
@@ -265,7 +271,7 @@ Look at what release 1 changed, then publish again with `"base_generation": 1`.
 **A content type change that stored entries wouldn't fit.** Limiting `dish` to 10 characters, with a
 token that may change content types:
 
-```sh
+```sh run=errors
 curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/content-types/recipes" \
   -H "Authorization: Bearer $COLOPHON_TOKEN" \
   -H "Content-Type: application/json" \
@@ -280,64 +286,24 @@ curl -i -X PUT "http://localhost:8080/api/v1/projects/$PROJECT/environments/prod
 <details>
 <summary>Response: <code>422</code>, naming each entry in the way and why</summary>
 
-```http
+```http output=errors
 HTTP/1.1 422 Unprocessable Entity
 content-type: application/json
-x-request-id: 01a1ee92-b0c7-77e5-9e51-909722d6ebee
-content-length: 1219
-date: Wed, 18 Nov 2026 12:12:33 GMT
+x-request-id: 01a1ef20-4828-71ca-bc42-dbef0b4e05c7
+content-length: 494
+date: Wed, 18 Nov 2026 14:47:12 GMT
 
 {
   "error": {
     "code": "validation_failed",
-    "message": "this change to `dish` would make stored content invalid: 5 entries are in the way; change them first, or keep the old definition",
+    "message": "this change to `dish` would make stored content invalid: 1 entry is in the way; change them first, or keep the old definition",
     "details": {
       "reason": "needs_migration",
       "pointer": "/fields/0",
       "entries": [
         {
-          "entry": "01a1ee84-8d1c-760a-82a7-f39ca86a9e1b",
+          "entry": "01a1ef20-4597-76f8-bae6-0b7a237cec78",
           "title": "Ginger biscuits",
-          "state": "draft",
-          "problem": {
-            "reason": "too_long",
-            "pointer": "/dish",
-            "message": "Dish is at most 10 characters"
-          }
-        },
-        {
-          "entry": "01a1ee85-afa4-779f-895f-42780642e364",
-          "title": "Bakewell tart",
-          "state": "draft",
-          "problem": {
-            "reason": "too_long",
-            "pointer": "/dish",
-            "message": "Dish is at most 10 characters"
-          }
-        },
-        {
-          "entry": "01a1ee85-d1b6-7564-994a-65b55a75b012",
-          "title": "Treacle tart",
-          "state": "draft",
-          "problem": {
-            "reason": "too_long",
-            "pointer": "/dish",
-            "message": "Dish is at most 10 characters"
-          }
-        },
-        {
-          "entry": "01a1ee86-e419-766d-bf99-9094106e5799",
-          "title": "Bakewell tart",
-          "state": "draft",
-          "problem": {
-            "reason": "too_long",
-            "pointer": "/dish",
-            "message": "Dish is at most 10 characters"
-          }
-        },
-        {
-          "entry": "01a1ee88-5797-75c8-a330-100cf0e41491",
-          "title": "Eccles cakes",
           "state": "draft",
           "problem": {
             "reason": "too_long",
@@ -346,9 +312,9 @@ date: Wed, 18 Nov 2026 12:12:33 GMT
           }
         }
       ],
-      "total": 5
+      "total": 1
     },
-    "request_id": "01a1ee92-b0c7-77e5-9e51-909722d6ebee"
+    "request_id": "01a1ef20-4828-71ca-bc42-dbef0b4e05c7"
   }
 }
 ```
@@ -360,24 +326,24 @@ that entry's content. Nothing was changed.
 
 **A method the path doesn't take:**
 
-```sh
+```sh run=errors
 curl -i -X DELETE "http://localhost:8080/api/v1/projects/$PROJECT/environments/production/destinations" \
   -H "Authorization: Bearer $COLOPHON_TOKEN"
 ```
 
-```http
+```http output=errors
 HTTP/1.1 405 Method Not Allowed
 content-type: application/json
-x-request-id: 01a1ee96-1ccf-7496-9d5b-bdc22b481e7b
+x-request-id: 01a1ef20-483e-73a1-b62b-4cdc22e95c60
 allow: GET,HEAD,POST
 content-length: 122
-date: Wed, 18 Nov 2026 12:16:17 GMT
+date: Wed, 18 Nov 2026 14:47:12 GMT
 
 {
   "error": {
     "code": "method_not_allowed",
     "message": "method not allowed",
-    "request_id": "01a1ee96-1ccf-7496-9d5b-bdc22b481e7b"
+    "request_id": "01a1ef20-483e-73a1-b62b-4cdc22e95c60"
   }
 }
 ```
@@ -411,7 +377,7 @@ The [SDK](/sdk/) does the reading for you: every failure is an `ApiError` with `
 milliseconds, at most a minute) and `retryable`, which is true for no answer, `429` and any `5xx`: the "yes,
 as it is" row above.
 
-```ts
+```ts not-run="a fragment: save() stands for your own call"
 import { ApiError } from '@colophon-cms/sdk';
 
 try {

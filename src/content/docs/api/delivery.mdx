@@ -7,7 +7,7 @@ The delivery API is what your website or app reads. It answers with **published 
 release you ask for or the latest one, and it needs **no credential**. A draft can't appear in it: delivery
 reads through a database role that has no access to drafts.
 
-```text
+```text not-run="the routes, as a list"
 GET  /content/v1/{project}/{environment}/{collection}             a page of published entries
 GET  /content/v1/{project}/{environment}/{collection}/{entry}     one published entry
 POST /content/v1/{project}/{environment}/{collection}/query       filter, sort and select
@@ -172,7 +172,7 @@ date: Wed, 18 Nov 2026 11:39:18 GMT
 
 {/* snippet delivery: snippets/from-last.sh DELIVERY_ETAG=header:etag */}
 
-```sh
+```sh not-run="the reader copies these from the answer above; CI takes them from it"
 export DELIVERY_ETAG='"…"'   # the etag header, quotes included
 ```
 
@@ -235,7 +235,7 @@ reads fall back to the database.
 
 `POST …/{collection}/query` takes one JSON document instead of a URL full of parameters:
 
-```json
+```json not-run="a query document; the commands on this page send it"
 {
   "filters": [{ "field": "minutes", "op": "lte", "value": 30 }],
   "sort": [{ "field": "minutes", "dir": "asc" }],
@@ -384,7 +384,7 @@ reader already downloaded can't be recalled.
 
 A row that uses uploads, in an image field or inside rich text, carries `media`, keyed by asset id:
 
-```json
+```json not-run="a fragment of an answer"
 "media": {
   "01a1…": {
     "url": "http://localhost:8080/media/v1/{project}/production/01a1…/{sha256}",

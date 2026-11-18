@@ -8,6 +8,8 @@ what it writes to its logs, and how it stops. Everything here works the same in 
 
 ## Health endpoints
 
+{/* snippet ops: snippets/cd-quickstart.sh */}
+
 Three endpoints answer without a credential and are never rate-limited. Every answer carries
 `cache-control: no-store`, so no proxy keeps them.
 
@@ -19,11 +21,11 @@ Three endpoints answer without a credential and are never rate-limited. Every an
 
 ### `/livez`
 
-```sh
+```sh run=ops
 curl -i http://localhost:8080/livez
 ```
 
-```http
+```http output=ops
 HTTP/1.1 200 OK
 content-type: application/json
 cache-control: no-store
@@ -39,11 +41,11 @@ that failed then would only make things worse.
 
 ### `/readyz`
 
-```sh
+```sh run=ops
 curl -i http://localhost:8080/readyz
 ```
 
-```http
+```http output=ops
 HTTP/1.1 200 OK
 content-type: application/json
 cache-control: no-store
@@ -77,23 +79,39 @@ messages.
 **Degraded** means the cache is unreachable. Colophon keeps serving everything, reads and writes, from PostgreSQL;
 delivery reads are slower because every one reaches the database, and each server counts rate limits on its own
 instead of sharing the count. That is why `degraded` still answers `200`: a load balancer should keep sending
-traffic. Here is a server whose cache is down:
+traffic. To see it on the quick start, stop its cache, then ask again:
 
-```http
+```sh run=ops
+docker compose stop valkey
+```
+
+{/* snippet ops: snippets/wait-ready.sh degraded */}
+
+```sh run=ops
+curl -i http://localhost:8080/readyz
+```
+
+```http output=ops
 HTTP/1.1 200 OK
 content-type: application/json
 cache-control: no-store
-x-request-id: 01a1ee89-d304-723f-9cc0-55924e13d4f1
+x-request-id: 01a1ef2b-6265-7274-ba59-a921b9819a29
 content-length: 76
-connection: close
-date: Wed, 18 Nov 2026 12:02:52 GMT
+date: Wed, 18 Nov 2026 14:59:20 GMT
 
-{"status":"degraded","role":"all","checks":{"database":"up","cache":"down"}}
+{
+  "status": "degraded",
+  "role": "all",
+  "checks": {
+    "database": "up",
+    "cache": "down"
+  }
+}
 ```
 
 And the same server while its database didn't answer:
 
-```http
+```http not-run="needs PostgreSQL stopped, which the rest of the run depends on"
 HTTP/1.1 503 Service Unavailable
 content-type: application/json
 cache-control: no-store
@@ -109,11 +127,11 @@ A server without a cache at all is `ready`, with `"cache":"not_configured"`.
 
 ### `/version`
 
-```sh
+```sh run=ops
 curl -s http://localhost:8080/version
 ```
 
-```json
+```json output=ops
 {"version":"0.1.0-alpha.1","commit":"…","build_date":"2026-11-18","api":["v1"]}
 ```
 
@@ -125,12 +143,12 @@ curl -s http://localhost:8080/version
 `colophon doctor` reads a server's `/readyz` and says, in words and with its exit status, whether the server is
 ready and which dependency isn't. It reports exactly what a load balancer sees.
 
-```sh
+```sh not-run="the first line is for a systemd install; the CLI page runs doctor on the quick start in CI"
 colophon doctor --server http://127.0.0.1:58000              # systemd install
 docker compose exec colophon colophon doctor --server http://127.0.0.1:8080   # quick start
 ```
 
-```text
+```text not-run="the CLI page checks this output"
 server    http://127.0.0.1:8080
 role      all
 status    ready
@@ -138,9 +156,13 @@ cache     up
 database  up
 ```
 
-A server whose cache is down:
+A server whose cache is down (the quick start's, still stopped from above):
 
-```text
+```sh run=ops exit=5
+docker compose exec -T colophon colophon doctor --server http://127.0.0.1:8080
+```
+
+```text output=ops
 server    http://127.0.0.1:8080
 role      all
 status    degraded
@@ -148,19 +170,38 @@ cache     down
 database  up
 ```
 
-`--json` prints one result instead, the same envelope every `colophon` command uses:
+With the cache started again, `--json` prints one result instead, the same envelope every `colophon`
+command uses:
 
-```json
+```sh run=ops
+docker compose start valkey
+```
+
+{/* snippet ops: snippets/wait-ready.sh ready */}
+
+```sh run=ops
+docker compose exec -T colophon colophon doctor --server http://127.0.0.1:8080 --json
+```
+
+```json output=ops
 {"command":"doctor","data":{"checks":{"cache":"up","database":"up"},"role":"all","server":"http://127.0.0.1:8080","status":"ready"},"version":2}
 ```
 
 When nothing answers, it says so on standard error, and with `--json` also as an `error` result:
 
-```text
+```sh run=ops stderr=1 exit=5
+docker compose exec -T colophon colophon doctor --server http://127.0.0.1:8099
+```
+
+```text output=ops
 error: http://127.0.0.1:8099: connection failed
 ```
 
-```json
+```sh run=ops exit=5
+docker compose exec -T colophon colophon doctor --server http://127.0.0.1:8099 --json
+```
+
+```json output=ops
 {"command":"doctor","error":{"code":"unreachable","message":"http://127.0.0.1:8099: connection failed"},"version":2}
 ```
 
@@ -212,7 +253,7 @@ is printed to standard error, in a plain box, beside them.
 At `info`, a JSON log shows the server starting, its dependencies changing state (once per change, not once per
 check), and work events such as releases:
 
-```json
+```json not-run="log lines from a server starting with its cache down; times and ids differ on every start"
 {"timestamp":"2026-11-18T12:02:00.427492Z","level":"INFO","message":"listening","local_addr":"127.0.0.1:8080","role":"all","version":"0.1.0-alpha.1","commit":"…","target":"colophon_server"}
 {"timestamp":"2026-11-18T12:02:00.432178Z","level":"WARN","message":"dependency is down","dependency":"cache","cause":"Connection refused (os error 111): Connection refused (os error 111)","target":"colophon_server::probes"}
 {"timestamp":"2026-11-18T12:02:00.446435Z","level":"INFO","message":"dependency is up","dependency":"database","target":"colophon_server::probes"}
@@ -234,7 +275,7 @@ pages anyone.
 Request lines are at `debug`, because at serving rates a line per request would cost more than the requests. Turn
 them on with `COLOPHON_LOG=info,tower_http=debug`. Each request then gets lines like this:
 
-```json
+```json not-run="one log line; it appears only with debug logging on"
 {"timestamp":"2026-11-18T12:08:40.857154Z","level":"DEBUG","message":"finished processing request","latency":"2247 μs","status":404,"target":"tower_http::trace::on_response","span":{"commit":"…","method":"GET","path":"/content/v1/00000000-0000-7000-8000-000000000000/production/recipes","request_id":"01a1ee8f-2496-71be-a025-001fed29dc48","route":"/content/v1/{project}/{environment}/{collection}","version":"0.1.0-alpha.1","name":"request"}}
 ```
 
@@ -246,7 +287,7 @@ them on with `COLOPHON_LOG=info,tower_http=debug`. Each request then gets lines 
 
 Counting answers by route and status from a JSON log:
 
-```sh
+```sh not-run="reads a log file you keep"
 jq -r 'select(.target=="tower_http::trace::on_response") | "\(.span.route) \(.status)"' colophon.log \
   | sort | uniq -c | sort -rn
 ```
@@ -279,7 +320,7 @@ For example, the delivery backlog by state, with its oldest due time. The migrat
 run this from a trusted machine; a URL given to `psql` as an argument holds its password and shows in the process
 list, so on a shared host put the password in a `~/.pgpass` file (mode `0600`) instead:
 
-```sh
+```sh not-run="needs the database owner's URL; the quick start keeps PostgreSQL private inside its pod"
 psql "$COLOPHON_MIGRATION_DATABASE_URL" -XAtq -c \
   "select status, count(*), min(next_attempt_at) from jobs group by status"
 ```
@@ -299,7 +340,7 @@ On `SIGTERM` (what `systemctl stop` and `docker stop` send) or `SIGINT`, the ser
 
 While it drains:
 
-```http
+```http not-run="needs the server stopped while the run still uses it"
 HTTP/1.1 503 Service Unavailable
 content-type: application/json
 cache-control: no-store
@@ -313,7 +354,7 @@ date: Wed, 18 Nov 2026 12:03:00 GMT
 
 And its log:
 
-```json
+```json not-run="needs the server stopped while the run still uses it"
 {"timestamp":"2026-11-18T12:02:59.379580Z","level":"INFO","message":"shutdown signal received","signal":"SIGTERM","target":"colophon_server"}
 {"timestamp":"2026-11-18T12:02:59.379628Z","level":"INFO","message":"shutting down: readiness is now draining","drain_delay_ms":"5000","target":"colophon_server::shutdown"}
 {"timestamp":"2026-11-18T12:03:04.379413Z","level":"INFO","message":"drain delay over: no longer accepting connections","target":"colophon_server::shutdown"}
