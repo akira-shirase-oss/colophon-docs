@@ -8,6 +8,7 @@ import starlightLlmsTxt from 'starlight-llms-txt';
 const site = 'https://docs.colophon.404human.dev';
 const repo = 'https://github.com/akira-shirase-oss/colophon-docs';
 
+
 export default defineConfig({
 	site,
 	trailingSlash: 'always',
@@ -35,6 +36,14 @@ export default defineConfig({
 				{ tag: 'link', attrs: { rel: 'alternate', type: 'application/rss+xml', title: 'Colophon changelog', href: `${site}/changelog/rss.xml` } },
 				{ tag: 'meta', attrs: { property: 'og:image', content: `${site}/og.png` } },
 				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
+				// Two accessibility fixes to Starlight's output. The search button shows "Search" and its
+				// shortcut (⌘K or Ctrl K), so its name says both, as speech input reads them (WCAG 2.5.3). A wide table scrolls sideways on a phone, and a scrolling region must take
+				// keyboard focus (WCAG 2.1.1).
+				{
+					tag: 'script',
+					content:
+						"document.addEventListener('DOMContentLoaded',()=>{for(const b of document.querySelectorAll('button[data-open-modal]')){const k=[...b.querySelectorAll('kbd kbd')].map(e=>e.textContent).join(' ');if(k)b.setAttribute('aria-label','Search '+k)}for(const t of document.querySelectorAll('.sl-markdown-content table'))t.tabIndex=0});",
+				},
 			],
 			expressiveCode: {
 				themes: ['github-dark-default', 'github-light-default'],
