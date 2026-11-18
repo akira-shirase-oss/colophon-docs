@@ -1,15 +1,15 @@
 ---
 /**
  * The page title, plus the page's own Markdown: "Copy Markdown" puts it on the clipboard (for an AI
- * assistant or an issue), and "View as Markdown" opens the plain file. Pages that aren't docs entries
- * (the changelog) get the title alone.
+ * assistant or an issue), and "View as Markdown" opens the plain file (`/<page>.md`; the changelog
+ * has one too).
  */
 import Default from '@astrojs/starlight/components/PageTitle.astro';
 
 const route = Astro.locals.starlightRoute;
 const id = route.entry?.id;
-const isDoc = route.entry?.filePath?.includes('src/content/docs/') ?? false;
-const mdHref = isDoc && id !== undefined ? `/${id === 'index' ? 'index' : id}.md` : undefined;
+// The home page's route id is empty; the changelog has a Markdown copy of its own.
+const mdHref = id === undefined ? undefined : `/${id === '' || id === 'index' ? 'index' : id}.md`;
 ---
 
 <Default />

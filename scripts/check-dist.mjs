@@ -44,6 +44,13 @@ for (const page of pages) {
 	if (!existsSync(join(dist, md))) problems.push(`missing ${md}: the Markdown copy of ${rel}`);
 }
 
+// Every Markdown copy a page offers exists.
+for (const page of pages) {
+	for (const match of readFileSync(page, 'utf8').matchAll(/(?:data-copy-md|href)="(\/[^"#?]*\.md)"/g)) {
+		if (!existsSync(join(dist, match[1]))) problems.push(`${relative(dist, page)} offers ${match[1]}, which isn't built`);
+	}
+}
+
 // Public output never names the machine it was built on, its user or a home directory, and never
 // cites an internal decision number. The names come from the machine running the build, so this
 // file names nobody.
