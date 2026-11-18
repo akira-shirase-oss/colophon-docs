@@ -44,3 +44,9 @@ test('the page shows numbers exactly as the server wrote them', () => {
 	assert.match(display(float), /"ratio": 1\.50,/);
 	assert.match(display(float), /"count": 3\n/);
 });
+
+test('a paging cursor (REST next_cursor, GraphQL endCursor) does not count; a missing one does', () => {
+	const page = (cursor) => answer('01a1ee61-d403-73ff-9f17-bfd7ba3edc0f', 'Wed, 18 Nov 2026 11:19:11 GMT', `{"next_cursor":${cursor},"data":{"pageInfo":{"endCursor":${cursor}}}}`);
+	assert.equal(normalise(page('"djE6YWFh"')), normalise(page('"djE6YmJi"')));
+	assert.notEqual(normalise(page('"djE6YWFh"')), normalise(page('null')));
+});
