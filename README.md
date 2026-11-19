@@ -86,7 +86,20 @@ Cloudflare Pages, project `colophon-docs`:
 npm run build
 npx -y wrangler@4.148.0 pages deploy dist --project-name colophon-docs --branch main
 npm run check:live -- https://docs.colophon.404human.dev   # search, the reference, no sideways scroll
+node scripts/indexnow.mjs                                   # tell search engines which pages changed
 ```
+
+`scripts/indexnow.mjs` sends the addresses changed since the merge's first parent, the previous deploy, to
+[IndexNow](https://www.indexnow.org) (Bing, Yandex and others share submissions):
+
+- a changed or deleted docs page sends its own address;
+- a changelog entry sends `/changelog/`;
+- the OpenAPI copy sends `/api/reference/`;
+- components, styles, config or `public/` send every address in the sitemap.
+
+It sends one request with at most 10,000 URLs and a 10-second deadline, and it never fails a deploy (exit 0;
+`--dry-run` prints the URLs without sending them). The key in `public/<key>.txt` is public by design, because
+IndexNow verifies a submission by fetching it from the site. The maintainer approved this on 19 November 2026.
 
 ## Licence
 
