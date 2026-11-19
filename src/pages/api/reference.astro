@@ -6,6 +6,9 @@
  * A full-width page of its own, since Scalar brings its own navigation.
  */
 import spec from '../../data/openapi.json';
+// The same tokens and type as every other page (D-210): Inter, and the byte copy of colophon-cms design/tokens.css.
+import '@fontsource-variable/inter/opsz.css';
+import '../../styles/tokens.css';
 
 const title = 'API reference · Colophon Docs';
 const description =
@@ -30,7 +33,6 @@ const operations = Object.values(spec.paths).reduce(
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
 		<meta property="og:url" content={canonical} />
-		<link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
 		<script is:inline>
 			// The docs' own theme choice, so this page opens in the same light or dark.
 			(() => {
@@ -40,49 +42,25 @@ const operations = Object.values(spec.paths).reduce(
 				} catch {}
 				const dark = stored === 'dark' || ((stored === null || stored === 'auto' || stored === '') && matchMedia('(prefers-color-scheme: dark)').matches);
 				document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+				// The tokens' dark theme is the `.dark` class.
+				document.documentElement.classList.toggle('dark', dark);
 			})();
 		</script>
 		<style is:global>
-			@font-face {
-				font-family: 'Geist';
-				src: url('/fonts/geist-400.woff2') format('woff2');
-				font-weight: 400;
-				font-display: swap;
-			}
-			@font-face {
-				font-family: 'Geist';
-				src: url('/fonts/geist-500.woff2') format('woff2');
-				font-weight: 500;
-				font-display: swap;
-			}
-			@font-face {
-				font-family: 'Geist';
-				src: url('/fonts/geist-600.woff2') format('woff2');
-				font-weight: 600;
-				font-display: swap;
-			}
+			/* Every colour is a token role, by its own name (never an alias that could shadow one); the tokens switch
+			   with the `.dark` class. */
 			:root {
-				--ink: #0a0a0a;
-				--muted: #5e5e5e;
-				--line: #e5e5e5;
-				--bg: #ffffff;
-				--accent: #33558a;
 				color-scheme: light;
 			}
-			:root[data-theme='dark'] {
-				--ink: #f5f5f5;
-				--muted: #9c9c9c;
-				--line: #2a2a2a;
-				--bg: #121212;
-				--accent: #9fb6e0;
+			:root.dark {
 				color-scheme: dark;
 			}
 			html,
 			body {
 				margin: 0;
-				background: var(--bg);
-				color: var(--ink);
-				font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+				background: var(--background);
+				color: var(--foreground);
+				font-family: var(--font-sans);
 			}
 			.ref-bar {
 				position: sticky;
@@ -93,8 +71,8 @@ const operations = Object.values(spec.paths).reduce(
 				align-items: center;
 				gap: 0.5rem 1rem;
 				padding: 0.625rem 16px;
-				background: var(--bg);
-				border-bottom: 1px solid var(--line);
+				background: var(--background);
+				border-bottom: 1px solid var(--border);
 				font-size: 0.875rem;
 			}
 			.ref-bar a {
@@ -106,7 +84,8 @@ const operations = Object.values(spec.paths).reduce(
 				align-items: center;
 				gap: 0.5rem;
 				font-weight: 600;
-				font-family: 'DM Sans', 'Geist', sans-serif;
+				font-family: var(--font-title);
+				font-weight: 400;
 			}
 			.ref-home svg {
 				width: 18px;
@@ -117,25 +96,25 @@ const operations = Object.values(spec.paths).reduce(
 				flex-wrap: wrap;
 				gap: 0.25rem 1rem;
 				margin-inline-start: auto;
-				color: var(--muted);
+				color: var(--muted-foreground);
 			}
 			.ref-links a:hover,
 			.ref-home:hover {
-				color: var(--accent);
+				color: var(--link);
 			}
 			.ref-note {
 				margin: 0;
 				padding: 0.625rem 16px;
 				font-size: 0.8125rem;
 				line-height: 1.5;
-				color: var(--muted);
-				border-bottom: 1px solid var(--line);
+				color: var(--muted-foreground);
+				border-bottom: 1px solid var(--border);
 			}
 			.ref-note code {
 				font-size: 0.95em;
 			}
 			.ref-note a {
-				color: var(--accent);
+				color: var(--link);
 			}
 			noscript p {
 				padding: 1rem 16px;
@@ -204,9 +183,15 @@ const operations = Object.values(spec.paths).reduce(
 				proxyUrl: '',
 				metaData: { title: 'API reference · Colophon Docs' },
 				customCss: `
-					.scalar-app, .scalar-api-reference { --scalar-font: 'Geist', ui-sans-serif, system-ui, sans-serif; --scalar-font-code: ui-monospace, SFMono-Regular, Menlo, monospace; }
-					.light-mode { --scalar-color-accent: #33558a; --scalar-background-1: #ffffff; --scalar-color-3: #636363; }
-					.dark-mode { --scalar-color-accent: #9fb6e0; --scalar-background-1: #121212; --scalar-color-3: #a3a3a3; }
+					.scalar-app, .scalar-api-reference { --scalar-font: var(--font-sans); --scalar-font-code: var(--font-mono); --scalar-radius: calc(var(--radius) - 8px); --scalar-radius-lg: calc(var(--radius) - 4px); }
+					.light-mode, .dark-mode {
+						--scalar-color-1: var(--foreground); --scalar-color-2: var(--foreground); --scalar-color-3: var(--muted-foreground);
+						--scalar-color-accent: var(--link); --scalar-background-1: var(--background); --scalar-background-2: var(--muted);
+						--scalar-background-3: var(--secondary); --scalar-background-accent: var(--brand-soft); --scalar-border-color: var(--border);
+						/* Methods and code in the status inks, which read on both grounds in both themes. */
+						--scalar-color-blue: var(--brand-ink); --scalar-color-purple: var(--changed-ink); --scalar-color-green: var(--live-ink);
+						--scalar-color-orange: var(--pending-ink); --scalar-color-yellow: var(--pending-ink); --scalar-color-red: var(--attention-ink);
+					}
 				`,
 			});
 		</script>

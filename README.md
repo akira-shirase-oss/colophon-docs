@@ -75,4 +75,4 @@ npm run check:live -- https://docs.colophon.404human.dev   # search, the referen
 
 ## Licence
 
-MIT, like Colophon. The fonts in `public/fonts` (DM Sans, Geist) are under the SIL Open Font License 1.1.
+MIT, like Colophon. The fonts are under the SIL Open Font License 1.1: Geist Pixel in `public/fonts` (the landing's latin subset, with `OFL-GeistPixel.txt`), and Inter from `@fontsource-variable/inter`.

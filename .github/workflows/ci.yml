@@ -45,6 +45,8 @@ jobs:
       - run: npm test
       - name: Every code block runs, is a checked output, or says why not
         run: node scripts/snippets.mjs --coverage
+      - name: The design tokens are colophon-cms's, at the pinned ref, and the font its recorded bytes
+        run: node scripts/check-tokens.mjs
       - name: Build, validate internal links, check the output
         run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -105,6 +107,10 @@ jobs:
           # listed page passes in each state (no JavaScript; settled; a changelog card open).
           node scripts/axe-scan.check.mjs
           node scripts/axe-scan.mjs http://127.0.0.1:4321 / /quick-start/ /installation/ /concepts/ /api/ /api/authentication/ /api/delivery/ /api/management/ /changelog/
+          # Contrast on the resolved token values, light and dark (D-210): the gate must fail its known-bad
+          # fixtures, then every role pair and every text element on these pages meets its bar.
+          node scripts/contrast.check.mjs
+          node scripts/contrast.mjs http://127.0.0.1:4321 / /quick-start/ /concepts/ /api/ /api/authentication/ /api/reference/ /self-hosting/configuration/ /changelog/
 
   openapi:
     name: OpenAPI copy matches colophon-cms main
