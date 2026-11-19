@@ -1,6 +1,6 @@
 ---
 title: Members and roles
-description: "Inviting people with a single-use link and a role, what the four built-in roles may do, custom roles with permissions per content type, per field and for one's own entries, removing people, and the last owner."
+description: Inviting people with a single-use link, the four built-in roles, custom roles per content type, per field or for one's own entries, and the last owner.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -140,3 +140,5 @@ owner leaving is refused: *A project must keep at least one owner. Make someone 
 
 Every change to members, invitations, roles and API tokens is written to **Settings** → **Activity**,
 which nobody can edit or delete.
+
+Background, for any CMS: [where field-level permissions leak, and which rules the database should enforce](https://colophon.404human.dev/blog/field-level-permissions/).

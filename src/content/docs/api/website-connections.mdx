@@ -1,6 +1,6 @@
 ---
 title: Website connections and receipts
-description: "Tell your website about each release with a webhook, clear a CDN by tag, check the live site for the release, and read the receipt that says how far each release got."
+description: Tell your website about each release with a webhook, clear a CDN by tag, check the live site for the release, and read the receipt of how far it got.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -400,3 +400,5 @@ no `location` is run by any worker; one with a `location` only by workers at tha
 To verify a release from more than one place, run a worker in each place, `colophon-server --role worker`,
 each with its own `COLOPHON_WORKER_LOCATION` (`eu-west`, `us-east`), and add a site check pinned to each. A
 release both see is **Verified at 2 locations**.
+
+Background, for any CMS: [why a site still shows old content after publishing, checked layer by layer](https://colophon.404human.dev/blog/website-not-updating-after-publish/).

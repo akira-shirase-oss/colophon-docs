@@ -1,0 +1,26 @@
+---
+/**
+ * Starlight's own <head> (everything in the config's `head`, the theme script and the font
+ * preload included), plus structured data for search engines: WebSite on the introduction, a
+ * BreadcrumbList and a TechArticle on every other page. The blocks are JSON-LD data, built from the
+ * page's frontmatter as objects and serialised by jsonLd(), so no title can break out of the block;
+ * scripts/csp-hashes.mjs knows them by their exact type and needs no hash for them.
+ */
+import Default from '@astrojs/starlight/components/Head.astro';
+import { docsJsonLd, jsonLd } from '../lib/json-ld.mjs';
+
+const route = Astro.locals.starlightRoute;
+const isNotFound = route.entry?.id === '404' || Astro.url.pathname.startsWith('/404');
+const blocks = isNotFound
+	? []
+	: docsJsonLd({
+			site: String(Astro.site),
+			path: Astro.url.pathname,
+			title: route.entry.data.title,
+			description: route.entry.data.description,
+			lastUpdated: route.lastUpdated,
+		});
+---
+
+<Default />
+{blocks.map((block) => <script is:inline type="application/ld+json" set:html={jsonLd(block)} />)}

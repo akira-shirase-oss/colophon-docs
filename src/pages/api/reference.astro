@@ -12,7 +12,7 @@ import '../../styles/tokens.css';
 
 const title = 'API reference · Colophon Docs';
 const description =
-	'Every route of Colophon’s HTTP API — management, delivery, preview, media and auth — generated from the OpenAPI document the server is built from, with request examples and try-it.';
+	'Every route of Colophon’s HTTP API (management, delivery, preview, media, auth), generated from the server’s OpenAPI document, with examples and try-it.';
 const canonical = new URL('/api/reference/', Astro.site).href;
 const paths = Object.keys(spec.paths).length;
 const operations = Object.values(spec.paths).reduce(
@@ -33,6 +33,10 @@ const operations = Object.values(spec.paths).reduce(
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
 		<meta property="og:url" content={canonical} />
+		<meta property="og:type" content="article" />
+		<meta property="og:site_name" content="Colophon Docs" />
+		<meta property="og:image" content={new URL('/og.png', Astro.site).href} />
+		<meta name="twitter:card" content="summary_large_image" />
 		<script is:inline>
 			// The docs' own theme choice, so this page opens in the same light or dark.
 			(() => {

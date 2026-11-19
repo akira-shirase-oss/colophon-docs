@@ -5,8 +5,15 @@
 # set inline styles; a style can't send data anywhere under this connect-src). Search runs
 # WebAssembly, hence 'wasm-unsafe-eval'. Pages connect only to this site; the API reference alone
 # may connect elsewhere, so its Test Request reaches the server the reader chooses.
+# The one third party: Cloudflare Web Analytics (cookieless page views and real-user Core Web
+# Vitals; maintainer, 19 November 2026). Cloudflare adds its beacon to each page; the script is
+# allowed from https://static.cloudflareinsights.com and its report to https://cloudflareinsights.com,
+# and nothing else. scripts/lib/third-parties.mjs holds the same list; check-dist fails if this policy
+# names any other origin, and check-privacy fails if a page contacts any other host.
+# Each page's Markdown copy (/page.md) names the HTML page as canonical: scripts/md-canonical.mjs
+# appends one Link rule per copy after the build.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' INLINE_SCRIPT_HASHES; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' INLINE_SCRIPT_HASHES https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
@@ -21,4 +28,4 @@
 
 /api/reference/*
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' INLINE_SCRIPT_HASHES; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' INLINE_SCRIPT_HASHES https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'

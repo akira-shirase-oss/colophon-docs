@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // What the built site sends, and to whom. Opens every page in a real browser and records every
-// request; the only host allowed is the site itself. Then, on the API reference, sends a request
+// request; the only hosts allowed are the site itself and the exact allowlist in
+// scripts/lib/third-parties.mjs (Cloudflare Web Analytics' two hosts, which Cloudflare adds in
+// production only). Any other host fails; scripts/seo.test.mjs proves a third origin does. Then, on the API reference, sends a request
 // with a token through "Test Request" to a stub server of our own and proves that:
 //   - the request went straight to that server (no proxy.scalar.com or any other host),
 //   - the token is not left in localStorage or sessionStorage after a reload,
@@ -10,6 +12,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
+import { foreignHosts } from './lib/third-parties.mjs';
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback);
@@ -154,8 +157,7 @@ await browser.close();
 server.close();
 
 const own = new Set([new URL(base).host, `127.0.0.1:${stubPort}`, new URL(remote).host]);
-const foreign = [...hosts].filter(([host]) => !own.has(host));
-for (const [host, on] of foreign) problems.push(`${host} contacted from ${[...on].slice(0, 3).join(', ')}`);
+for (const host of foreignHosts(hosts.keys(), own)) problems.push(`${host} contacted from ${[...hosts.get(host)].slice(0, 3).join(', ')}`);
 
 console.log(`check-privacy: ${paths.length} pages; hosts contacted: ${[...hosts.keys()].join(', ')}`);
 console.log(`  try-it: browser sent ${sentToStub.length} request(s) to the configured server (${sentToStub.map((r) => `${r.method} ${new URL(r.url).pathname}`).join(', ')}), the stub received ${received.length}; token in storage before reload ${JSON.stringify(before)}, after ${JSON.stringify(after)}; to ${remote}: ${sentToRemote.length} request(s), direct`);
@@ -163,4 +165,4 @@ if (problems.length > 0) {
 	console.error(`check-privacy: ${problems.length} problem(s)\n${problems.map((p) => `  - ${p}`).join('\n')}`);
 	process.exit(1);
 }
-console.log('check-privacy: only this site and the configured server were contacted; no token kept after reload; a stored Your Colophon URL is shown and never contacted');
+console.log('check-privacy: only this site, the configured server and the allowlisted analytics hosts were contacted; no token kept after reload; a stored Your Colophon URL is shown and never contacted');

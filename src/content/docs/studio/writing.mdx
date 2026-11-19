@@ -1,6 +1,6 @@
 ---
 title: Writing and autosave
-description: "How the entry editor saves as you type, what Saved, Saving and Not saved mean, what happens offline or when someone else saved first, and how required fields and validation messages work."
+description: How the editor saves as you type, what Saved, Saving and Not saved mean, working offline, when someone else saved first, and required-field messages.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -139,3 +139,5 @@ The Studio has no delete button yet. Deleting is done through the management API
 (`DELETE …/collections/{collection}/entries/{entry}`, see the [API reference](/api/reference/)) and
 leaves a tombstone. It is refused while the entry is published (*take it down first*), while another
 entry links to it (in a draft or published), or while an unpublished publish request includes it.
+
+Background, for any CMS: [how editors lose work to crashes, collisions and flaky networks](https://colophon.404human.dev/blog/cms-lost-edits/).
