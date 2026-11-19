@@ -5,6 +5,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { homedir, hostname, userInfo } from 'node:os';
+import { headersFor, pageOf, parseHeaders } from './lib/headers.mjs';
+import { ANALYTICS_REPORT_ORIGIN, ANALYTICS_SCRIPT_ORIGIN } from './lib/third-parties.mjs';
 
 const dist = new URL('../dist/', import.meta.url).pathname;
 const problems = [];
@@ -64,6 +66,55 @@ for (const file of text) {
 	for (const pattern of forbidden) {
 		if (pattern.test(body)) problems.push(`${relative(dist, file)} contains ${pattern}`);
 	}
+}
+
+// Search snippets: every page's description is 120 to 155 characters (longer ones are cut in
+// results) and names no decision number, commit hash or repository path.
+for (const page of pages) {
+	const rel = relative(dist, page);
+	if (rel === '404.html') continue;
+	const html = readFileSync(page, 'utf8');
+	const description = html.match(/<meta name="description" content="([^"]*)"/)?.[1]?.replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+	if (description === undefined) problems.push(`${rel} has no meta description`);
+	else {
+		const length = [...description].length;
+		if (length < 120 || length > 155) problems.push(`${rel}: the description is ${length} characters; keep it to 120-155`);
+		if (/\b[0-9a-f]{7,40}\b/.test(description) || /\b(src|scripts|crates|docs|public)\//.test(description)) problems.push(`${rel}: the description names a hash or a repository path`);
+	}
+	// Structured data parses, and each page has the types the Head override writes.
+	const types = [];
+	for (const [, body] of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
+		try {
+			types.push(JSON.parse(body)['@type']);
+		} catch {
+			problems.push(`${rel}: a JSON-LD block doesn't parse`);
+		}
+	}
+	const expected = rel === 'index.html' ? ['WebSite'] : rel.startsWith('api/reference/') ? [] : ['BreadcrumbList', 'TechArticle'];
+	if (types.join() !== expected.join()) problems.push(`${rel}: JSON-LD types are [${types}], expected [${expected}]`);
+}
+
+// The content security policy names exactly one third party, Cloudflare Web Analytics
+// (scripts/lib/third-parties.mjs): its script origin in script-src, its report origin in
+// connect-src, nothing anywhere else. (The API reference's connect-src keeps its own `https:` and
+// local addresses for Test Request.)
+const served = parseHeaders(readFileSync(join(dist, '_headers'), 'utf8'));
+for (const path of ['/', '/quick-start/', '/api/reference/']) {
+	const policy = headersFor(served, path).get('content-security-policy') ?? '';
+	for (const directive of policy.split(';').map((d) => d.trim()).filter(Boolean)) {
+		const [name, ...sources] = directive.split(/\s+/);
+		const origins = sources.filter((source) => /^https?:\/\/[^*]/.test(source) && !/^http:\/\/(localhost|127\.0\.0\.1):/.test(source));
+		const want = name === 'script-src' ? [ANALYTICS_SCRIPT_ORIGIN] : name === 'connect-src' && path !== '/api/reference/' ? [ANALYTICS_REPORT_ORIGIN] : [];
+		if (origins.join() !== want.join()) problems.push(`${path}: ${name} names [${origins}], expected exactly [${want}]`);
+	}
+}
+
+// Every Markdown copy names its HTML page as canonical (scripts/md-canonical.mjs).
+for (const copy of all.filter((file) => file.endsWith('.md')).map((file) => `/${relative(dist, file)}`)) {
+	const page = pageOf(copy);
+	const link = headersFor(served, copy).get('link') ?? '';
+	if (link !== `<https://docs.colophon.404human.dev${page}>; rel="canonical"`) problems.push(`${copy}: Link is "${link}", expected its page ${page} as canonical`);
+	if (!existsSync(join(dist, page, 'index.html'))) problems.push(`${copy}: its page ${page} isn't built`);
 }
 
 // The search index covers the pages.

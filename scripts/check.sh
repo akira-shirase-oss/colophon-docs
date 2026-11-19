@@ -9,6 +9,7 @@ node scripts/axe-scan.check.mjs                # the accessibility scan fails a 
 node scripts/contrast.check.mjs                # the contrast gate fails an inverted map, a blended tint, a gradient stop
 node scripts/snippets.mjs --coverage >/dev/null # every code block runs, is checked, or says why not
 npm run build                                  # internal links, CSP hashes, the output checks
+node scripts/check-csp-browser.mjs             # every page under its real headers: no CSP violation, JSON-LD parses
 # Nothing private in what is committed: home paths and this machine's account name.
 if git grep -nIE '/Users/|/home/[a-z]' -- ':!scripts/check.sh' ':!package-lock.json' >/dev/null; then
 	echo 'check: a home path is in a tracked file:' >&2

@@ -8,6 +8,7 @@
 //   node scripts/check-live.mjs https://docs.colophon.404human.dev
 import { chromium } from 'playwright';
 import { describe, scanSite } from './axe-scan.mjs';
+import { ANALYTICS_REPORT_ORIGIN, ANALYTICS_SCRIPT_ORIGIN } from './lib/third-parties.mjs';
 
 const base = (process.argv[2] ?? 'https://docs.colophon.404human.dev').replace(/\/$/, '');
 const pages = ['/', '/quick-start/', '/installation/', '/concepts/', '/api/', '/api/authentication/', '/api/delivery/', '/api/management/', '/changelog/'];
@@ -21,12 +22,36 @@ for (const [path, otherHosts] of [['/', false], ['/quick-start/', false], ['/api
 	const directive = (name) => policy.split(';').map((d) => d.trim()).find((d) => d.startsWith(`${name} `)) ?? '';
 	if (directive('script-src').includes("'unsafe-inline'") || directive('script-src').includes("'unsafe-eval'")) problems.push(`${path}: script-src allows inline or eval`);
 	if (!directive('script-src').includes("'sha256-")) problems.push(`${path}: script-src has no hashes`);
-	if (directive('connect-src').includes('https:') !== otherHosts) problems.push(`${path}: connect-src is "${directive('connect-src')}"`);
+	// connect-src: this site and the analytics report origin only; the API reference also any https
+	// server (Test Request). script-src: this site, hashes, and the analytics script origin.
+	const connect = directive('connect-src').split(/\s+/).slice(1);
+	if (connect.includes('https:') !== otherHosts || (!otherHosts && connect.join(' ') !== `'self' ${ANALYTICS_REPORT_ORIGIN}`)) problems.push(`${path}: connect-src is "${directive('connect-src')}"`);
+	if (!directive('script-src').split(/\s+/).includes(ANALYTICS_SCRIPT_ORIGIN)) problems.push(`${path}: script-src doesn't allow ${ANALYTICS_SCRIPT_ORIGIN}`);
 	if (directive('frame-ancestors') !== "frame-ancestors 'none'") problems.push(`${path}: frame-ancestors is not 'none'`);
 	if (!/max-age=\d{8,}/.test(headers.get('strict-transport-security') ?? '')) problems.push(`${path}: no HSTS`);
 	if (headers.get('x-content-type-options') !== 'nosniff') problems.push(`${path}: no nosniff`);
 	if (!headers.get('referrer-policy')) problems.push(`${path}: no Referrer-Policy`);
 }
+// Search engines: each Markdown copy names its page as canonical; the pages carry their structured
+// data; and nothing on the host rewrites page text (Cloudflare's email obfuscation turned address-like
+// strings in code samples into "[email protected]").
+{
+	const link = (await fetch(`${base}/quick-start.md`, { method: 'HEAD' })).headers.get('link') ?? '';
+	if (link !== `<${base}/quick-start/>; rel="canonical"`) problems.push(`/quick-start.md: Link is "${link}"`);
+	for (const [path, types] of [['/', 'WebSite'], ['/quick-start/', 'BreadcrumbList,TechArticle'], ['/cli/', 'BreadcrumbList,TechArticle']]) {
+		const html = await (await fetch(base + path)).text();
+		const found = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(([, body]) => {
+			try {
+				return JSON.parse(body)['@type'];
+			} catch {
+				return '(unparseable)';
+			}
+		});
+		if (found.join() !== types) problems.push(`${path}: JSON-LD types are [${found}], expected [${types}]`);
+		if (html.includes('/cdn-cgi/l/email-protection')) problems.push(`${path}: the host rewrote an address in the page (Cloudflare email obfuscation is on)`);
+	}
+}
+
 const browser = await chromium.launch();
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });

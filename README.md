@@ -24,6 +24,21 @@ Documentation that drifts from the code is worse than none, so CI checks the doc
 - **Links resolve.** Internal links are checked while building; external ones by lychee.
 - **The output is complete and clean.** Every page has its Markdown copy, search and `llms.txt` are built,
   and no machine path or private name is in the output (`scripts/check-dist.mjs`).
+- **One third party, and only one.** The pages contact this site and nothing else, except Cloudflare Web
+  Analytics. Cloudflare adds its beacon to every page it serves; it sets no cookies and reports page views
+  and real-user Core Web Vitals, which search needs and lab tests can't give. The content security policy
+  (`public/_headers`) allows exactly its script origin (`https://static.cloudflareinsights.com`) and its report
+  origin (`https://cloudflareinsights.com`). `scripts/lib/third-parties.mjs` holds the same two hosts:
+  `check-dist` fails if the policy names any other origin, and `check-privacy` fails if a page contacts any
+  other host. No other analytics, tag managers or pixels.
+- **Search engines read it right.** Every page's description is 120–155 characters. The pages carry JSON-LD
+  (`src/components/Head.astro`): WebSite on the introduction, and BreadcrumbList and TechArticle elsewhere,
+  published by the project. Each Markdown copy names its HTML page as canonical in a `Link` header
+  (`scripts/md-canonical.mjs`), so the page is what gets indexed. JSON-LD blocks are data the browser never
+  runs, so `scripts/csp-hashes.mjs` gives them no hash. The exemption covers only an exact
+  `type="application/ld+json"`, and any other unknown type fails. `scripts/check-csp-browser.mjs` loads every
+  page under the headers Pages will send and fails on any policy violation, after proving that a known-bad
+  page fails.
 
 ## Working on it
 
