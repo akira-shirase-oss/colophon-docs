@@ -30,10 +30,19 @@ export default defineConfig({
 			credits: false,
 			titleDelimiter: '·',
 			tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
-			customCss: ['./src/styles/theme.css'],
+			// Inter (the Studio's own package and axis), the tokens (a byte copy of colophon-cms design/tokens.css,
+			// D-210) and the theme that maps them onto Starlight.
+			customCss: ['@fontsource-variable/inter/opsz.css', './src/styles/tokens.css', './src/styles/theme.css'],
 			head: [
-				{ tag: 'link', attrs: { rel: 'preload', href: '/fonts/geist-400.woff2', as: 'font', type: 'font/woff2', crossorigin: '' } },
-				{ tag: 'link', attrs: { rel: 'preload', href: '/fonts/dm-sans-600.woff2', as: 'font', type: 'font/woff2', crossorigin: '' } },
+				{ tag: 'link', attrs: { rel: 'preload', href: '/fonts/geist-pixel-latin.woff2', as: 'font', type: 'font/woff2', crossorigin: '' } },
+				// The tokens name their dark theme `.dark` (as the Studio does); Starlight names it data-theme="dark".
+				// This keeps the class in step from the first paint and on every switch, so each Starlight
+				// variable maps to one token role (src/styles/theme.css). Without JavaScript the page is light.
+				{
+					tag: 'script',
+					content:
+						"(()=>{const r=document.documentElement,s=()=>r.classList.toggle('dark',r.dataset.theme==='dark');s();new MutationObserver(s).observe(r,{attributes:true,attributeFilter:['data-theme']})})();",
+				},
 				{ tag: 'link', attrs: { rel: 'alternate', type: 'application/rss+xml', title: 'Colophon changelog', href: `${site}/changelog/rss.xml` } },
 				{ tag: 'meta', attrs: { property: 'og:image', content: `${site}/og.png` } },
 				{ tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
@@ -52,11 +61,13 @@ export default defineConfig({
 			],
 			expressiveCode: {
 				plugins: [focusableCode()],
-				themes: ['github-dark-default', 'github-light-default'],
+				themes: ['github-dark', 'github-light'],
 				styleOverrides: {
-					borderRadius: '0.5rem',
-					codeFontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-					uiFontFamily: 'Geist, system-ui, sans-serif',
+					// The Studio's code: GitHub's light and dark themes (as its highlighter), its shapes and type.
+					borderRadius: 'calc(var(--radius) - 4px)',
+					borderColor: 'var(--border)',
+					codeFontFamily: 'var(--font-mono)',
+					uiFontFamily: 'var(--font-sans)',
 				},
 			},
 			components: {
