@@ -8,8 +8,9 @@
 // the policy as "data".
 import { createHash } from 'node:crypto';
 
-/** Types that run as script: hashed. An absent or empty type is classic JavaScript. */
-export const EXECUTABLE_TYPES = new Set(['', 'text/javascript', 'module']);
+/** Types that run as script: hashed. An absent or empty type is classic JavaScript. The same list as
+ * the landing site's (colophon-landing scripts/csp-rules.mjs), so both sites behave identically. */
+export const EXECUTABLE_TYPES = new Set(['', 'module', 'importmap', 'speculationrules', 'text/javascript', 'application/javascript']);
 /** The only data type exempt from hashing. */
 export const DATA_TYPE = 'application/ld+json';
 

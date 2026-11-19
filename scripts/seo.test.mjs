@@ -10,7 +10,7 @@ import { docsJsonLd, jsonLd } from '../src/lib/json-ld.mjs';
 const script = (attributes, body = 'console.log(1)') => `<script${attributes}>${body}</script>`;
 
 test('executable inline scripts are hashed: no type, an empty type, text/javascript, module', () => {
-	for (const attributes of ['', ' type=""', ' type="text/javascript"', ' type="module"', " type='MODULE '"]) {
+	for (const attributes of ['', ' type=""', ' type="text/javascript"', ' type="module"', " type='MODULE '", ' type="application/javascript"', ' type="importmap"', ' type="speculationrules"']) {
 		const found = inlineScripts(script(attributes));
 		assert.equal(found.hashes.length, 1, attributes);
 		assert.deepEqual(found.problems, [], attributes);
