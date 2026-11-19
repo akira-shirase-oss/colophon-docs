@@ -7,8 +7,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-/** The colophon-cms commit the tokens are copied from; becomes the release tag v0.1.0-alpha.1 once it is cut. */
-export const COLOPHON_REF = '15b283db0391cff47fab8ac2d9fbf3d0e46b582a';
+/** The colophon-cms release the tokens are copied from: moving it is the deliberate step that adopts a token change. */
+export const COLOPHON_REF = 'v0.1.0-alpha.1';
 const COPY = 'src/styles/tokens.css';
 const FONT = 'public/fonts/geist-pixel-latin.woff2';
 
@@ -43,4 +43,4 @@ if (sha !== recorded[2] || font.length !== Number(recorded[1])) {
 	console.error(`check-tokens: ${FONT} is ${font.length} bytes, sha256 ${sha}; the source records ${recorded[1]} bytes, ${recorded[2]}`);
 	process.exit(1);
 }
-console.log(`check-tokens: ${COPY} is colophon-cms ${local ? local : COLOPHON_REF.slice(0, 8)} design/tokens.css; ${FONT} matches its recorded sha256`);
+console.log(`check-tokens: ${COPY} is colophon-cms ${local ?? (/^[0-9a-f]{40}$/.test(COLOPHON_REF) ? COLOPHON_REF.slice(0, 8) : COLOPHON_REF)} design/tokens.css; ${FONT} matches its recorded sha256`);
