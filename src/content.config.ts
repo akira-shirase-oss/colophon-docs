@@ -6,7 +6,7 @@ import { docsSchema } from '@astrojs/starlight/schema';
 
 /** The labels a changelog entry may carry. The page filters on these, so keep them short and stable. */
 export const CHANGE_TYPES = ['Feature', 'Improvement', 'Fix', 'Security', 'Breaking', 'Deprecation'] as const;
-export const CHANGE_AREAS = ['API', 'Studio', 'SDK', 'CLI', 'Self-hosting', 'Performance'] as const;
+export const CHANGE_AREAS = ['API', 'Studio', 'SDK', 'CLI', 'Self-hosting', 'Performance', 'Docs'] as const;
 
 export const collections = {
 	docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),

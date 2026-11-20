@@ -81,7 +81,11 @@ export async function scanState(context, url, state) {
 		}
 		if (state === 'js-expanded') {
 			if (!isChangelog) return { state, violations: [], problem: 'no changelog card to expand' };
-			const toggle = cards.nth(1);
+			// The card to open: the first whose body holds a code block (a wide block in a just-opened card
+			// must be keyboard-reachable at once; its tabindex was taken while collapsed), else the second
+			// card. A fixed index stopped testing that whenever a new entry moved the cards along.
+			const withCode = page.locator('article.change:has(.expressive-code) .change-toggle');
+			const toggle = (await withCode.count()) > 0 ? withCode.first() : cards.nth(1);
 			await toggle.click();
 			const body = page.locator(`[id="${await toggle.getAttribute('aria-controls')}"]`);
 			if ((await toggle.getAttribute('aria-expanded')) !== 'true' || !(await body.isVisible())) {
