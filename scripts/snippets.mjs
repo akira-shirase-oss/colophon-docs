@@ -232,7 +232,8 @@ export function suiteScript(steps, { dir, workdir, base, skip }) {
 	// Aliases work as in an interactive shell (the CLI page defines one), so each block is sourced
 	// from its own file: a later line sees what an earlier one defined.
 	const lines = ['set -euo pipefail', 'shopt -s expand_aliases', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`, `export SNIPPET_HOME=${JSON.stringify(workdir)}`];
-	// When a step fails, say what the server answered: the last few requests' statuses (curl writes each
+	// When a step fails, say what the server answered (only under set -e: a step the page shows failing,
+	// `exit=N`, runs under set +e, and the ERR trap fires there too): the last few requests' statuses (curl writes each
 	// one to a side file, so no page's printed output changes) and the last command's output, tokens,
 	// secrets, cookies and passwords redacted. A failure without the answer can't be told from a flake.
 	const statusLog = join(dir, 'statuses.log');
@@ -241,7 +242,7 @@ export function suiteScript(steps, { dir, workdir, base, skip }) {
 		`curl() { command curl --write-out ${JSON.stringify(`%output{>>${statusLog}}%{http_code} %{method} %{url_effective}\n`)} "$@"; }`,
 		`__snippet_redact() { sed -E ${redactions.map((r) => `-e ${shellQuote(r)}`).join(' ')}; }`,
 		'__snippet_told=0',
-		`trap '[[ $__snippet_told == 1 ]] || { __snippet_told=1; echo "--- the last requests (status, method, URL):" >&2; tail -n 5 ${JSON.stringify(statusLog)} | __snippet_redact >&2; if [[ -s \${__snippet_out:-} ]]; then echo "--- step \${__snippet_step} printed (redacted):" >&2; head -c 4000 "\${__snippet_out}" | __snippet_redact >&2; echo >&2; fi; }' ERR`,
+		`trap '[[ $__snippet_told == 1 || $- != *e* ]] || { __snippet_told=1; echo "--- the last requests (status, method, URL):" >&2; tail -n 5 ${JSON.stringify(statusLog)} | __snippet_redact >&2; if [[ -s \${__snippet_out:-} ]]; then echo "--- step \${__snippet_step} printed (redacted):" >&2; head -c 4000 "\${__snippet_out}" | __snippet_redact >&2; echo >&2; fi; }' ERR`,
 	);
 	steps.forEach((step, index) => {
 		const out = join(dir, `${index}.out`);

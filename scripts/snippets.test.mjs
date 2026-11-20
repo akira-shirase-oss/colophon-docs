@@ -86,6 +86,8 @@ test('a failing step prints what the server answered, redacted, and the last req
 	const root = resolvePath(new URL('..', import.meta.url).pathname);
 	const dir = mkdtempSync(joinPath(tmpdir(), 'snippets-'));
 	const steps = [
+		// A step the page shows failing (exit=1) runs first: its expected failure must not use up the print.
+		{ kind: 'run', file: joinPath(root, 'src/content/docs/cli.mdx'), info: 'sh run=test exit=1', code: `echo '{"error":{"code":"unreachable"}}'; false` },
 		{
 			kind: 'run',
 			file: joinPath(root, 'src/content/docs/api/website-connections.mdx'),
@@ -101,7 +103,8 @@ test('a failing step prints what the server answered, redacted, and the last req
 	assert.notEqual(run.status, 0, 'the step must fail, as it does when the answer has no id');
 	assert.match(run.stderr, /from-last: no \.data\.id in the last answer/);
 	assert.match(run.stderr, /--- the last requests \(status, method, URL\):\n000 GET http:\/\/127\.0\.0\.1:58155\/nothing/);
-	assert.match(run.stderr, /--- step 0 printed \(redacted\):\n.*"code":"rate_limited"/);
+	assert.match(run.stderr, /--- step 1 printed \(redacted\):\n.*"code":"rate_limited"/);
+	assert.ok(!run.stderr.includes('unreachable'), 'the expected failure printed nothing');
 	assert.ok(!run.stderr.includes('cpc_live_0123456789ab'), run.stderr);
 	assert.equal(run.stderr.split('--- the last requests').length, 2, 'said once, however many traps fire');
 });
