@@ -153,6 +153,18 @@ const countArea = (area: string) => entries.filter((entry) => entry.data.areas.i
 		toggle.setAttribute('aria-expanded', String(open));
 		const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
 		if (body) body.hidden = !open;
+		// A code block measured while its card was collapsed had no width, so Expressive Code took its
+		// tabindex away; it measures again only 250 ms after a resize, plus an idle callback (~280 ms).
+		// Give an opened card's wide blocks their focus now, so the keyboard reaches them at once
+		// (WCAG 2.1.1, axe's scrollable-region-focusable); Expressive Code's own check agrees after.
+		if (body && open) {
+			for (const pre of body.querySelectorAll<HTMLElement>('.expressive-code pre')) {
+				if (pre.scrollWidth > pre.clientWidth && !pre.hasAttribute('tabindex')) {
+					pre.setAttribute('tabindex', '0');
+					pre.setAttribute('role', 'region');
+				}
+			}
+		}
 	};
 	const openFromHash = () => {
 		const target = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;

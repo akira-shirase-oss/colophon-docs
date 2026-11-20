@@ -207,15 +207,43 @@ export function matches(actual, expect) {
 		.every((line) => seen.has(line));
 }
 
+/** Single-quotes `text` for bash. */
+const shellQuote = (text) => `'${text.replaceAll("'", `'\\''`)}'`;
+
+/**
+ * sed -E expressions that hide what a failing step's output may carry: API, preview and connection
+ * tokens (`cpc_`, `cpv_` and any `c???_` key), Bearer values, JSON token/secret/password/csrf/cookie
+ * fields and Cookie headers. POSIX ERE only (no `\b`, no `I` flag), so BSD and GNU sed agree.
+ */
+export const redactions = [
+	String.raw`s/(^|[^A-Za-z0-9_])c[a-z]{1,3}_[A-Za-z0-9_-]{8,}/\1<redacted>/g`,
+	String.raw`s/(Bearer )[A-Za-z0-9._~+/=-]+/\1<redacted>/g`,
+	String.raw`s/("(token|secret|password|csrf|csrf_token|cookie|api_key|key)"[[:space:]]*:[[:space:]]*")[^"]*"/\1<redacted>"/g`,
+	String.raw`s/(([Ss]et-)?[Cc]ookie:[[:space:]]*)[^;[:space:]]+/\1<redacted>/g`,
+];
+
 // ---------------------------------------------------------------- running a suite
 
-function runAll(steps) {
-	const dir = join(ROOT, '.snippets', 'run');
-	mkdirSync(dir, { recursive: true });
-	mkdirSync(workdir, { recursive: true });
+/**
+ * The bash script one suite runs: each step sourced in order, its output kept in `<dir>/<n>.out`. Run
+ * steps' sources are written to `dir` too. Exported so a test can run a script built from made-up steps.
+ */
+export function suiteScript(steps, { dir, workdir, base, skip }) {
 	// Aliases work as in an interactive shell (the CLI page defines one), so each block is sourced
 	// from its own file: a later line sees what an earlier one defined.
 	const lines = ['set -euo pipefail', 'shopt -s expand_aliases', `cd ${JSON.stringify(workdir)}`, `export BASE=${JSON.stringify(base)}`, `export SNIPPET_HOME=${JSON.stringify(workdir)}`];
+	// When a step fails, say what the server answered (only under set -e: a step the page shows failing,
+	// `exit=N`, runs under set +e, and the ERR trap fires there too): the last few requests' statuses (curl writes each
+	// one to a side file, so no page's printed output changes) and the last command's output, tokens,
+	// secrets, cookies and passwords redacted. A failure without the answer can't be told from a flake.
+	const statusLog = join(dir, 'statuses.log');
+	lines.push(
+		`: > ${JSON.stringify(statusLog)}`,
+		`curl() { command curl --write-out ${JSON.stringify(`%output{>>${statusLog}}%{http_code} %{method} %{url_effective}\n`)} "$@"; }`,
+		`__snippet_redact() { sed -E ${redactions.map((r) => `-e ${shellQuote(r)}`).join(' ')}; }`,
+		'__snippet_told=0',
+		`trap '[[ $__snippet_told == 1 || $- != *e* ]] || { __snippet_told=1; echo "--- the last requests (status, method, URL):" >&2; tail -n 5 ${JSON.stringify(statusLog)} | __snippet_redact >&2; if [[ -s \${__snippet_out:-} ]]; then echo "--- step \${__snippet_step} printed (redacted):" >&2; head -c 4000 "\${__snippet_out}" | __snippet_redact >&2; echo >&2; fi; }' ERR`,
+	);
 	steps.forEach((step, index) => {
 		const out = join(dir, `${index}.out`);
 		const marker = `echo "=== step ${index}: ${relative(ROOT, step.file)}" >&2`;
@@ -238,6 +266,7 @@ function runAll(steps) {
 		}
 		const source = join(dir, `${index}.sh`);
 		writeFileSync(source, `${code}\n`);
+		lines.push(`__snippet_out=${JSON.stringify(out)} __snippet_step=${index}`);
 		// `exit=N`: a command the page shows failing; it must end with that status. `stderr=1`: what
 		// it prints on standard error is part of its output too (an `error: …` line, a summary).
 		const expected = meta(step.info, 'exit');
@@ -255,8 +284,15 @@ function runAll(steps) {
 			);
 		}
 	});
+	return `${lines.join('\n')}\n`;
+}
+
+function runAll(steps) {
+	const dir = join(ROOT, '.snippets', 'run');
+	mkdirSync(dir, { recursive: true });
+	mkdirSync(workdir, { recursive: true });
 	const script = join(dir, 'suite.sh');
-	writeFileSync(script, `${lines.join('\n')}\n`);
+	writeFileSync(script, suiteScript(steps, { dir, workdir, base, skip }));
 	const result = spawnSync('bash', [script], { stdio: ['ignore', 'inherit', 'inherit'], env: process.env });
 	if (result.status !== 0) {
 		console.error(`snippets: the run stopped (exit ${result.status}); its script is ${relative(ROOT, script)}`);
