@@ -1,7 +1,11 @@
 // The runner's comparison: what changes on every run is normalised away, nothing else is.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { display, fences, matches, normalise } from './snippets.mjs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath, resolve as resolvePath } from 'node:path';
+import { display, fences, matches, normalise, redactions, suiteScript } from './snippets.mjs';
 
 const answer = (id, date, body) =>
 	`HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: ${id}\r\ncontent-length: ${body.length}\r\ndate: ${date}\r\n\r\n${body}`;
@@ -56,4 +60,48 @@ test('match=lines: every line the page shows must arrive, in any order; others m
 	assert.ok(matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n\nevent: change\ndata: {"k":"entries"}\n', page));
 	assert.ok(!matches('event: hello\ndata: {}\n\nevent: change\ndata: {"k":"tokens"}\n', page));
 	assert.ok(!matches('event: hello\ndata: {}\n', { info: ' output=ops', code: 'event: hello\ndata: {}\nmore' }));
+});
+
+test("a failing step's printed answer hides its tokens, secrets and cookies, and keeps the rest", () => {
+	const answer = [
+		'{"data":{"id":"01a1","token":"cpc_live_9f8e7d6c5b4a3210","name":"Site"}}',
+		'{"error":{"code":"rate_limited","message":"too many requests"}}',
+		'Authorization: Bearer cpv_abcdefgh12345678',
+		'set-cookie: colophon_session=s3cr3tvalue; Path=/',
+		'{"secret": "whsec_abc", "password":"hunter2hunter2"}',
+		'curl 429 POST http://127.0.0.1:58000/api/v1/x?k=cpv_0123456789abcdef',
+	].join('\n');
+	const sed = spawnSync('sed', ['-E', ...redactions.flatMap((r) => ['-e', r])], { input: answer, encoding: 'utf8' });
+	assert.equal(sed.status, 0, sed.stderr);
+	const out = sed.stdout;
+	for (const secret of ['cpc_live_9f8e7d6c5b4a3210', 'cpv_abcdefgh12345678', 's3cr3tvalue', 'whsec_abc', 'hunter2hunter2', 'cpv_0123456789abcdef']) {
+		assert.ok(!out.includes(secret), `${secret} leaked:\n${out}`);
+	}
+	for (const kept of ['"id":"01a1"', '"name":"Site"', 'rate_limited', 'too many requests', '429 POST', 'Path=/']) {
+		assert.ok(out.includes(kept), `${kept} was lost:\n${out}`);
+	}
+});
+
+test('a failing step prints what the server answered, redacted, and the last requests', () => {
+	const root = resolvePath(new URL('..', import.meta.url).pathname);
+	const dir = mkdtempSync(joinPath(tmpdir(), 'snippets-'));
+	const steps = [
+		{
+			kind: 'run',
+			file: joinPath(root, 'src/content/docs/api/website-connections.mdx'),
+			info: 'sh run=test',
+			// A request that gets no answer (a closed port), then the error body a page's command printed.
+			code: `curl -s -o /dev/null http://127.0.0.1:58155/nothing || true\necho '{"error":{"code":"rate_limited","message":"slow down"},"token":"cpc_live_0123456789ab"}'`,
+		},
+		{ kind: 'script', file: joinPath(root, 'src/content/docs/api/website-connections.mdx'), path: 'snippets/from-last.sh', args: 'ID=.data.id' },
+	];
+	const script = joinPath(dir, 'suite.sh');
+	writeFileSync(script, suiteScript(steps, { dir, workdir: dir, base: 'http://127.0.0.1:58155', skip: new Set() }));
+	const run = spawnSync('bash', [script], { encoding: 'utf8' });
+	assert.notEqual(run.status, 0, 'the step must fail, as it does when the answer has no id');
+	assert.match(run.stderr, /from-last: no \.data\.id in the last answer/);
+	assert.match(run.stderr, /--- the last requests \(status, method, URL\):\n000 GET http:\/\/127\.0\.0\.1:58155\/nothing/);
+	assert.match(run.stderr, /--- step 0 printed \(redacted\):\n.*"code":"rate_limited"/);
+	assert.ok(!run.stderr.includes('cpc_live_0123456789ab'), run.stderr);
+	assert.equal(run.stderr.split('--- the last requests').length, 2, 'said once, however many traps fire');
 });
