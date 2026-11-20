@@ -6,7 +6,9 @@
 # first create was answered `429 rate_limited, retry-after: 10` in CI on 2026-11-20. The page is right;
 # the suite must wait, as any client honouring Retry-After would. Fails if the limiter never recovers
 # within 30 seconds, which would be a bug of its own.
-__probe="$BASE/api/v1/projects/$PROJECT"
+# The same collection the burst asked for, which the quick start's token reads (the project record
+# itself answers it 404: a token sees content, not the project).
+__probe="$BASE/api/v1/projects/$PROJECT/environments/production/collections/recipes/entries"
 for __try in $(seq 30); do
 	__status=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $COLOPHON_TOKEN" "$__probe")
 	[[ $__status == 429 ]] || break
