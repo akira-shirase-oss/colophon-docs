@@ -704,7 +704,7 @@ mcp '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"create_pub
   "result": {
     "content": [
       {
-        "text": "{\"idempotency_key\":\"mcp-01a1ef2d706276b1b700cf0d660d8c9a\",\"publish_request\":{\"created_at\":\"2026-11-18T15:01:34.946978Z\",\"created_by\":\"01a1ef2d-176f-73ce-adac-caca6a06be9f\",\"hash\":\"sha256:022f948e26a9826c6a6660713f7d85efd9d4869d8f2036b3d345beca227c4bcc\",\"id\":\"01a1ef2d-7064-76a3-9d4f-5197f0ebffdc\",\"items\":[{\"collection\":\"recipes\",\"content_hash\":\"sha256:c406cee24d4d7fda392da9c3c2626a155d26c4343bacb75a7922a0c38bb84e6b\",\"created_by\":\"01a1ef2d-176f-73ce-adac-caca6a06be9f\",\"current_revision_id\":\"01a1ef2d-7042-71f6-86fc-2f4908419ee8\",\"edited\":false,\"entry_id\":\"01a1ef2d-7012-750c-b8fc-8edbfcb055fa\",\"kind\":\"publish\",\"published_revision_id\":null,\"revision_id\":\"01a1ef2d-7042-71f6-86fc-2f4908419ee8\",\"schema_version\":3,\"title\":\"Treacle tart\"}],\"reviews\":[],\"rollback_generation\":null,\"stages\":[],\"status\":{\"by\":null,\"edited_items\":0,\"generation\":null,\"self_review\":false,\"state\":\"open\"},\"submitted_at\":null,\"submitted_by\":null,\"title\":\"New tart recipes\",\"undo_of\":null,\"updated_at\":\"2026-11-18T15:01:34.946978Z\"},\"replayed\":false}",
+        "text": "{\"idempotency_key\":\"mcp-01a1ef2d706276b1b700cf0d660d8c9a\",\"publish_request\":{\"created_at\":\"2026-11-18T15:01:34.946978Z\",\"created_by\":\"01a1ef2d-176f-73ce-adac-caca6a06be9f\",\"hash\":\"sha256:022f948e26a9826c6a6660713f7d85efd9d4869d8f2036b3d345beca227c4bcc\",\"hidden_items\":0,\"id\":\"01a1ef2d-7064-76a3-9d4f-5197f0ebffdc\",\"items\":[{\"collection\":\"recipes\",\"content_hash\":\"sha256:c406cee24d4d7fda392da9c3c2626a155d26c4343bacb75a7922a0c38bb84e6b\",\"created_by\":\"01a1ef2d-176f-73ce-adac-caca6a06be9f\",\"current_revision_id\":\"01a1ef2d-7042-71f6-86fc-2f4908419ee8\",\"edited\":false,\"entry_id\":\"01a1ef2d-7012-750c-b8fc-8edbfcb055fa\",\"kind\":\"publish\",\"published_revision_id\":null,\"revision_id\":\"01a1ef2d-7042-71f6-86fc-2f4908419ee8\",\"schema_version\":3,\"title\":\"Treacle tart\",\"title_hidden\":false}],\"reviews\":[],\"rollback_generation\":null,\"stages\":[],\"status\":{\"by\":null,\"edited_items\":0,\"generation\":null,\"self_review\":false,\"state\":\"open\"},\"submitted_at\":null,\"submitted_by\":null,\"title\":\"New tart recipes\",\"undo_of\":null,\"updated_at\":\"2026-11-18T15:01:34.946978Z\"},\"replayed\":false}",
         "type": "text"
       }
     ],
@@ -715,6 +715,7 @@ mcp '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"create_pub
         "created_at": "2026-11-18T15:01:34.946978Z",
         "created_by": "01a1ef2d-176f-73ce-adac-caca6a06be9f",
         "hash": "sha256:022f948e26a9826c6a6660713f7d85efd9d4869d8f2036b3d345beca227c4bcc",
+        "hidden_items": 0,
         "id": "01a1ef2d-7064-76a3-9d4f-5197f0ebffdc",
         "items": [
           {
@@ -728,7 +729,8 @@ mcp '{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"create_pub
             "published_revision_id": null,
             "revision_id": "01a1ef2d-7042-71f6-86fc-2f4908419ee8",
             "schema_version": 3,
-            "title": "Treacle tart"
+            "title": "Treacle tart",
+            "title_hidden": false
           }
         ],
         "reviews": [],

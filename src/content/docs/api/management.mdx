@@ -355,10 +355,12 @@ date: Wed, 18 Nov 2026 11:39:17 GMT
         "schema_version": 2,
         "current_revision_id": "01a1ee74-3dd4-7003-8a3c-94e51101bfda",
         "edited": false,
+        "title_hidden": false,
         "published_revision_id": null,
         "created_by": "01a1ee74-27eb-779c-9f6f-e6f270b7ac15"
       }
     ],
+    "hidden_items": 0,
     "reviews": [],
     "stages": []
   }
@@ -372,6 +374,10 @@ Every later step sends that hash as `If-Match`: if an entry is saved again meanw
 matches and the step is refused with `409 stale_changeset`, so nobody approves or publishes something they
 didn't see. `POST …/refresh` re-pins the current revisions. `"unpublish": [ids]` in the body takes entries
 down instead.
+
+A request shows only what your role may read. `hidden_items` counts the items left out because your role
+can't read their entries, and an item's `title_hidden` is `true` when your role can't read the entry's title
+field, so its `title` is blank.
 
 ```sh not-run="the reader copies these from the answer above; CI takes them from it"
 export REQUEST='…'        # data.id
