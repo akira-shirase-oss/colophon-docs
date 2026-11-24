@@ -35,7 +35,7 @@ colophon --version
 ```
 
 ```text output=cli
-colophon 0.1.0-alpha.1 (commit …, built 2026-11-18)
+colophon 0.1.0-alpha.7 (commit …, built 2026-11-18)
 ```
 
 The rest of this page uses that alias. Without `COLOPHON_CONFIG_DIR`, `colophon login` is approved but can't
@@ -201,7 +201,7 @@ must be on the same minor version (any `0.1.x` with any `0.1.x`), the server mus
 be at least `0.1.0-alpha.1`. A misfit exits `2` and says which side to upgrade. Against a server on 0.2.0:
 
 ```text not-run="needs a server on another minor version"
-error: colophon 0.1.0-alpha.1 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so colophon and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install colophon 0.2.0 to match it (https://github.com/akira-shirase-oss/colophon-cms/releases).
+error: colophon 0.1.0-alpha.7 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so colophon and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install colophon 0.2.0 to match it (https://github.com/akira-shirase-oss/colophon-cms/releases).
 ```
 
 `logout` skips the check, so you can always sign out. `doctor` doesn't check versions.

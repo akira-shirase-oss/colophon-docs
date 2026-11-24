@@ -20,7 +20,7 @@ All of them are on the same address as the Studio, for example `https://cms.exam
 | Hear that content changed, without polling | **Live events** (server-sent events) | Published: `GET /content/v1/{project}/{environment}/events`. Everything: `GET /api/v1/projects/{project}/environments/{environment}/events` | Published: none. Everything: same as the management API |
 | Show a draft on your own site before it is published | **Preview API** | `/preview/v1/{project}/{environment}/…` | A preview token your site gets from a one-time code |
 | Serve uploaded images | **Media** | `GET /media/v1/{project}/{environment}/{asset}` | None |
-| Let an AI agent draft and propose | **MCP server** | `POST /api/v1/projects/{project}/environments/{environment}/mcp`, or `colophon mcp` over stdio | An API token |
+| Let an AI app work in your projects | **MCP server** | `/mcp` (on the hosted service, `https://colophonapp.404human.dev/mcp`); for a token, also `POST /api/v1/projects/{project}/environments/{environment}/mcp` or `colophon mcp` over stdio | Signing in (OAuth), or an API token for scripts |
 
 The short version: **websites read the delivery API with no credential; everything that reads drafts or
 writes goes through the management API with a token.** A token never belongs in a browser.
