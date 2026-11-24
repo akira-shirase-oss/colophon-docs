@@ -31,7 +31,7 @@ the SDK knows. It is ESM only, has no runtime dependencies, and runs on Node.js 
    ```
 
    ```text not-run="the quick start checks this output"
-   colophon-cms-sdk-0.1.0-alpha.1.tgz
+   colophon-cms-sdk-0.1.0-alpha.7.tgz
    ```
 
 2. **Build the rich-text renderer too, if you show rich text.** `@colophon-cms/rich-text` turns a rich-text
@@ -43,7 +43,7 @@ the SDK knows. It is ESM only, has no runtime dependencies, and runs on Node.js 
    ```
 
    ```text output=sdk
-   colophon-cms-rich-text-0.1.0-alpha.1.tgz
+   colophon-cms-rich-text-0.1.0-alpha.7.tgz
    ```
 
 3. **Install the tarballs** into your own project, beside the clone:
@@ -52,8 +52,8 @@ the SDK knows. It is ESM only, has no runtime dependencies, and runs on Node.js 
    mkdir ../recipe-script && cd ../recipe-script
    npm init -y >/dev/null
    npm install --no-audit --no-fund \
-     ../colophon-cms/colophon-cms-sdk-0.1.0-alpha.1.tgz \
-     ../colophon-cms/colophon-cms-rich-text-0.1.0-alpha.1.tgz
+     ../colophon-cms/colophon-cms-sdk-0.1.0-alpha.7.tgz \
+     ../colophon-cms/colophon-cms-rich-text-0.1.0-alpha.7.tgz
    ```
 
 </Steps>
@@ -510,8 +510,8 @@ node fit.mjs
 ```text output=sdk
 {
   compatible: true,
-  sdk: '0.1.0-alpha.1',
-  server: '0.1.0-alpha.1',
+  sdk: '0.1.0-alpha.7',
+  server: '0.1.0-alpha.7',
   api: [ 'v1' ]
 }
 ```
@@ -520,7 +520,7 @@ When it doesn't fit, `misfit` is a stable code (`api_dropped`, `api_not_yet`, `l
 `before_oldest`, `no_version_report`) and `reason` says which side to upgrade. Against a server on 0.2.0:
 
 ```text not-run="needs a server on another minor version"
-@colophon-cms/sdk 0.1.0-alpha.1 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so the SDK and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install @colophon-cms/sdk@0.2.0 to match it.
+@colophon-cms/sdk 0.1.0-alpha.7 is too old for the server at https://cms.example.com, which runs 0.2.0: before 1.0 each minor release may change the API, so the SDK and the server must share a minor version, and the server is on a later one (0.1 here, 0.2 there). Install @colophon-cms/sdk@0.2.0 to match it.
 ```
 
 The client also checks once by itself, before its first API call, as the `compat` option says:

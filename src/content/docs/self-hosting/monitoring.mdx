@@ -132,7 +132,7 @@ curl -s https://cms.example.com/version
 ```
 
 ```json output=ops
-{"version":"0.1.0-alpha.1","commit":"…","build_date":"2026-11-18","api":["v1"]}
+{"version":"0.1.0-alpha.7","commit":"…","build_date":"2026-11-18","api":["v1"]}
 ```
 
 `commit` is the full commit the binary was built from (shortened here). `colophon-server --version` and
@@ -254,7 +254,7 @@ At `info`, a JSON log shows the server starting, its dependencies changing state
 check), and work events such as releases:
 
 ```json not-run="log lines from a server starting with its cache down; times and ids differ on every start"
-{"timestamp":"2026-11-18T12:02:00.427492Z","level":"INFO","message":"listening","local_addr":"127.0.0.1:8080","role":"all","version":"0.1.0-alpha.1","commit":"…","target":"colophon_server"}
+{"timestamp":"2026-11-18T12:02:00.427492Z","level":"INFO","message":"listening","local_addr":"127.0.0.1:8080","role":"all","version":"0.1.0-alpha.7","commit":"…","target":"colophon_server"}
 {"timestamp":"2026-11-18T12:02:00.432178Z","level":"WARN","message":"dependency is down","dependency":"cache","cause":"Connection refused (os error 111): Connection refused (os error 111)","target":"colophon_server::probes"}
 {"timestamp":"2026-11-18T12:02:00.446435Z","level":"INFO","message":"dependency is up","dependency":"database","target":"colophon_server::probes"}
 {"timestamp":"2026-11-18T12:02:00.511837Z","level":"INFO","message":"worker started","owner":"colophon-1-1795003320485927513","target":"colophon_worker"}
