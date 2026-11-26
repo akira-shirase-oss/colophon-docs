@@ -59,8 +59,9 @@ and approve. Apps that read an `mcpServers` file take the address alone:
 ## What a connected app can do
 
 **One connection, all your projects.** The connection works in every project you're a member of, with your role
-in each, including projects you join later. The `list_projects` tool lists them; every other tool takes a
-required `project` argument, a project id from that list.
+in each, including projects you join later. The `list_projects` tool lists them, `create_project` makes a new
+one that you own (within your account's project limit), and every other tool takes a required `project`
+argument, a project id from that list.
 
 **Everything you can do in the Studio, except delete a project.** The tools, about 110 of them, are generated from
 the [management API](/api/management/): content types, entries and their history, media, publish requests and
@@ -68,6 +69,14 @@ review, publishing, schedules, releases and rollbacks, website connections, prev
 jobs and imports, schema migrations, members, roles, invitations, API tokens and the audience. There is no tool
 that deletes a project. The API decides every call with your permissions, exactly as it would for you in the
 Studio, so a tool your role can't use is refused.
+
+**Small edits stay small.** `edit_entry` changes the fields you name in `set`, clears the ones in `unset` and
+keeps every other field as it is, so fixing a typo in a title doesn't resend a long body. It saves on the
+revision the app read (`if_match`); if the draft changed since, nothing is saved.
+
+**Images go up as files.** `upload_asset` and `replace_asset` take the file base64-encoded in `content_base64`,
+with its `file_name` and `content_type`. One message carries at most 2 MiB, so a file of up to about 1.4 MiB
+fits; upload larger images in the Studio.
 
 **You say yes first.** A tool that publishes, approves, schedules, deletes, removes, revokes, rolls back or
 changes people's access does nothing on its first call. It answers with what it would do:

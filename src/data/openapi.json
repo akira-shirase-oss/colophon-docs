@@ -381,13 +381,31 @@
       },
       "AuthProviders": {
         "properties": {
+          "registration": {
+            "description": "who may sign up (D-235): anyone, only with an invitation, or nobody",
+            "enum": [
+              "open",
+              "invite",
+              "closed"
+            ],
+            "type": "string"
+          },
           "sso": {
             "description": "an external identity provider is configured",
             "type": "boolean"
+          },
+          "turnstile_site_key": {
+            "description": "Cloudflare Turnstile's site key when sign-ups must carry a token (D-235); null when none is checked",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "sso"
+          "sso",
+          "turnstile_site_key",
+          "registration"
         ],
         "type": "object"
       },
@@ -1504,6 +1522,10 @@
         },
         "type": "object"
       },
+      "HtmlPage": {
+        "description": "an HTML page for people",
+        "type": "string"
+      },
       "ImportBody": {
         "description": "one JSON object per line, one JSON array of the same objects, or a Strapi API response's `{\"data\": […], \"meta\": {…}}`. Each item is a native content document, a Strapi entity (`{\"type\": \"api::…\", \"data\": {…}}`, `{\"version\":…,\"data\":{…}}`, `{id, attributes}` or a flat `documentId`/`id` document) or a Sanity document (`_id`, `_type`). At most 512 items."
       },
@@ -1997,6 +2019,27 @@
           "identity_id",
           "role",
           "joined_at"
+        ],
+        "type": "object"
+      },
+      "Meter": {
+        "properties": {
+          "limit": {
+            "description": "null: unbounded (an administrator, or no quota configured)",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "used": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "used",
+          "limit"
         ],
         "type": "object"
       },
@@ -3243,7 +3286,7 @@
       "PublishedMedia": {
         "properties": {
           "current_url": {
-            "description": "follows replacements, without publishing again",
+            "description": "the bare address: the newest published version (D-229); in a site member's answer, the same version as url",
             "type": "string"
           },
           "height": {
@@ -3360,7 +3403,7 @@
         "type": "object"
       },
       "QueryDocument": {
-        "description": "the bounded query document (DX.1, D-103): `filters` (field, operator, value — only indexes the type declares), `sort`, `fields` (a selection that can only narrow), `limit`, `depth` (reference population levels). The canonical form hashes to `query_hash`.",
+        "description": "the bounded query document (DX.1, D-103), a JSON object holding only `filters`, `sort`, `fields`, `limit` and `depth`, all optional: {\"filters\": [{\"field\": \"slug\", \"op\": \"eq\", \"value\": \"hello\"}], \"sort\": [{\"field\": \"published_at\", \"dir\": \"desc\"}], \"fields\": [\"title\", \"slug\"], \"limit\": 20, \"depth\": 0}. `op` is one of eq, in, lt, lte, gt, gte, contains; `dir` is asc or desc. A filtered or sorted field must be declared `index`ed in the content type (`field_not_indexed` otherwise); `fields` is a selection that can only narrow; at most 8 filters and 4 sort keys, a `limit` of 1 to 100 and a `depth` (reference population levels) of 0 to 2. The canonical form hashes to `query_hash`.",
         "type": "object"
       },
       "QueryPage": {
@@ -4150,8 +4193,17 @@
             "format": "email",
             "type": "string"
           },
+          "invitation": {
+            "description": "A project invitation's token: the sign-up claims it and joins its project (D-235). Required on an invite-only installation (but for its first-run account); on an open one an invalid token is ignored",
+            "type": "string"
+          },
           "password": {
             "minLength": 8,
+            "type": "string"
+          },
+          "turnstile_token": {
+            "description": "Cloudflare Turnstile's token from the sign-up form; required where the installation checks one (`GET /auth/providers`)",
+            "maxLength": 2048,
             "type": "string"
           }
         },
@@ -4170,6 +4222,34 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "SignedUp": {
+        "properties": {
+          "joined": {
+            "description": "the project the sign-up joined by claiming its invitation (D-235); null when it claimed none",
+            "properties": {
+              "project_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "project_id",
+              "role"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "joined"
+        ],
         "type": "object"
       },
       "SiteSession": {
@@ -4617,7 +4697,7 @@
         "type": "object"
       },
       "TypeDefinition": {
-        "description": "a content type definition: `kind` (`collection` or `single`), `title` field name, `fields` (each with its `type` and options), `locales` policy. Rust revalidates every mutation against it; its canonical form hashes to `definition_hash`.",
+        "description": "a content type definition, a JSON object holding only `name` (what people call it), `title_field` (the id of a required single-line `text` field: it names each entry), `single` (true for a single type, which holds at most one entry; default false) and `fields`: {\"name\": \"Articles\", \"title_field\": \"title\", \"fields\": [{\"id\": \"title\", \"label\": \"Title\", \"type\": \"text\", \"required\": true}, {\"id\": \"slug\", \"label\": \"URL name\", \"type\": \"slug\", \"source\": \"title\", \"index\": true}, {\"id\": \"body\", \"label\": \"Body\", \"type\": \"rich_text\"}]}. A field has an `id` (lowercase letters, digits and underscores), a `label`, a `type` and optionally `description`, `required`, `unique`, `index`, `default`, `when` and its type's own options. `type` is one of text, rich_text, number, boolean, enum, datetime, slug, email, url, date, time, json, markdown, color, reference, asset, object, list, blocks. Rust revalidates every mutation against it; its canonical form hashes to `definition_hash`.",
         "type": "object"
       },
       "TypeVersion": {
@@ -4693,6 +4773,30 @@
         "format": "binary",
         "type": "string"
       },
+      "Usage": {
+        "properties": {
+          "assets": {
+            "$ref": "#/components/schemas/Meter"
+          },
+          "entries": {
+            "$ref": "#/components/schemas/Meter"
+          },
+          "projects": {
+            "$ref": "#/components/schemas/Meter"
+          },
+          "storage_bytes": {
+            "$ref": "#/components/schemas/Meter",
+            "description": "stored plus still-quarantined upload bytes"
+          }
+        },
+        "required": [
+          "projects",
+          "entries",
+          "assets",
+          "storage_bytes"
+        ],
+        "type": "object"
+      },
       "VersionReport": {
         "description": "the shape never changes: fields may be added, none removed or renamed",
         "properties": {
@@ -4750,9 +4854,9 @@
         "type": "http"
       },
       "sessionCookie": {
-        "description": "a browser session. Cookie-authenticated writes (anything but GET, HEAD, OPTIONS) also need an `Origin` the server trusts exactly and an `X-CSRF-Token` header matching the session's CSRF token, which lives in the readable `colophon_csrf` cookie.",
+        "description": "a browser session. Cookie-authenticated writes (anything but GET, HEAD, OPTIONS) also need an `Origin` the server trusts exactly and an `X-CSRF-Token` header matching the session's CSRF token, which lives in the readable `__Host-colophon_csrf` cookie.",
         "in": "cookie",
-        "name": "colophon_session",
+        "name": "__Host-colophon_session",
         "type": "apiKey"
       }
     }
@@ -4760,11 +4864,199 @@
   "info": {
     "description": "Colophon's HTTP API: the /api/v1 management surface the Studio, CLI, SDK and agents share, the public /content/v1 delivery and /media/v1 origins, and the server's own meta routes. Emitted from the route table the server itself is built from (D-110), so the document and the routes cannot drift.",
     "title": "Colophon",
-    "version": "0.1.0-alpha.1"
+    "version": "0.1.0-alpha.7"
   },
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/accounts/{identity}/disable": {
+      "post": {
+        "operationId": "disableAccount",
+        "parameters": [
+          {
+            "description": "the member's identity id",
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "disabled, or it already was"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unauthorized` — not signed in, the credential is invalid, or the token was revoked"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`administrators_only` — only an administrator can disable an account"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`not_found` — no such resource — or one the caller may not see, which looks the same"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`own_account, last_administrator` — your own account, or the last enabled administrator"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`rate_limited` — over the per-credential or per-address limit; `Retry-After`"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Disable an account: every session and API token it made is revoked, and it can't sign in (D-235)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/accounts/{identity}/enable": {
+      "post": {
+        "operationId": "enableAccount",
+        "parameters": [
+          {
+            "description": "the member's identity id",
+            "in": "path",
+            "name": "identity",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "enabled, or it already was"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unauthorized` — not signed in, the credential is invalid, or the token was revoked"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`administrators_only` — only an administrator can enable an account"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`not_found` — no such resource — or one the caller may not see, which looks the same"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`own_account` — your own account"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`rate_limited` — over the per-credential or per-address limit; `Retry-After`"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "Enable a disabled account again; it signs in afresh (D-235)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/installation": {
       "get": {
         "operationId": "installation",
@@ -4999,6 +5291,73 @@
         ]
       }
     },
+    "/api/v1/me/usage": {
+      "get": {
+        "operationId": "myUsage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Usage"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unauthorized` — not signed in, the credential is invalid, or the token was revoked"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`rate_limited` — over the per-credential or per-address limit; `Retry-After`"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "summary": "What the caller's account uses against its limits, across the projects it owns (D-235)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "operationId": "listProjects",
@@ -5155,7 +5514,7 @@
                 }
               }
             },
-            "description": "`administrators_only, not_set_up` — only an administrator creates projects"
+            "description": "`administrators_only, not_set_up` — only an administrator creates projects here"
           },
           "409": {
             "content": {
@@ -5165,7 +5524,7 @@
                 }
               }
             },
-            "description": "`project_exists` — a project with this slug exists"
+            "description": "`project_exists, project_limit` — a project with this slug exists, or the account owns as many projects as it may"
           },
           "422": {
             "content": {
@@ -5206,7 +5565,7 @@
             "bearerToken": []
           }
         ],
-        "summary": "Create a project (administrators only)",
+        "summary": "Create a project (administrators; any account where registration is open, up to the per-account cap)",
         "tags": [
           "projects"
         ]
@@ -22416,7 +22775,22 @@
         },
         "responses": {
           "201": {
-            "description": "the session's `Set-Cookie` pair",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SignedUp"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "the session's `Set-Cookie` pair, and the project joined when the sign-up claimed an invitation",
             "headers": {
               "Set-Cookie": {
                 "schema": {
@@ -22424,6 +22798,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`registration_closed, invitation_required` — this installation admits no sign-up (`closed`), or admits one only with a valid, unclaimed project invitation (`invite`; also the one first-run account before setup)"
           },
           "409": {
             "content": {
@@ -22443,7 +22827,7 @@
                 }
               }
             },
-            "description": "`invalid_email, weak_password` — the fields refused"
+            "description": "`invalid_email, weak_password, bot_check_failed` — the fields refused, or (where the installation checks one) the Turnstile token: missing, expired, replayed, for another host, or unverifiable"
           },
           "429": {
             "content": {
@@ -22453,7 +22837,7 @@
                 }
               }
             },
-            "description": "`rate_limited` — over the per-credential or per-address limit; `Retry-After`"
+            "description": "`rate_limited` — past the sign-ups one address may attempt in an hour (`COLOPHON_SIGNUPS_PER_ADDRESS_HOUR`), refused attempts included; `Retry-After` says when the window ends; over the per-credential or per-address limit; `Retry-After`"
           },
           "default": {
             "content": {
@@ -23032,6 +23416,270 @@
         ]
       }
     },
+    "/mcp": {
+      "delete": {
+        "operationId": "mcpPublicDelete",
+        "parameters": [
+          {
+            "description": "the session to end",
+            "in": "header",
+            "name": "mcp-session-id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`2025-11-25`",
+            "in": "header",
+            "name": "mcp-protocol-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "the session ended; its in-flight requests answer `request cancelled`"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`bad_request` — the `Mcp-Session-Id` or `MCP-Protocol-Version` header is missing or wrong"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unauthorized` — not signed in, the credential is invalid, or the token was revoked"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`api_token_required` — a person's credential — a browser session or a personal access token; agents sign in as project API tokens; `origin_not_allowed` — an `Origin` this server does not trust"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`not_found` — no such session — or one another token holds, which looks the same"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [
+          {
+            "apiToken": []
+          }
+        ],
+        "summary": "End the remote-MCP session early",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "get": {
+        "operationId": "mcpConnectPage",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlPage"
+                }
+              }
+            },
+            "description": "a static page; MCP clients POST to this address"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [],
+        "summary": "How to connect an AI app to this MCP server: a page for people who open the address (D-244)",
+        "tags": [
+          "mcp"
+        ]
+      },
+      "post": {
+        "operationId": "mcpPublicPost",
+        "parameters": [
+          {
+            "description": "the session `initialize` minted; required on every message after it",
+            "in": "header",
+            "name": "mcp-session-id",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "`2025-11-25`; required once a session exists",
+            "in": "header",
+            "name": "mcp-protocol-version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "when present it must be an origin this server trusts, exactly — the transport's DNS-rebinding check",
+            "in": "header",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpResponse"
+                }
+              }
+            },
+            "description": "the request's own JSON-RPC response; `Mcp-Session-Id` rides on the `initialize` answer only",
+            "headers": {
+              "Mcp-Session-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "a notification or a stray response — accepted, nothing to answer"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`bad_request` — not acceptable JSON-RPC, or `MCP-Protocol-Version`/`Accept` failed the transport's checks"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unauthorized` — not signed in, the credential is invalid, or the token was revoked"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`api_token_required` — a person's credential — a browser session or a personal access token; agents sign in as project API tokens; `origin_not_allowed` — an `Origin` this server does not trust"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`not_found` — no such session — or one another token holds, which looks the same"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`rate_limited` — the token's session cap is full; `Retry-After`"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "`unavailable` — the project's or the server's session cap is full"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "any other failure, in the one error envelope"
+          }
+        },
+        "security": [
+          {
+            "apiToken": []
+          }
+        ],
+        "summary": "The public MCP address: one JSON-RPC message, on the token's own project (D-244)",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
     "/me": {
       "get": {
         "operationId": "me",
@@ -23125,7 +23773,7 @@
         ],
         "responses": {
           "200": {
-            "description": "the stored `Content-Type`; `max-age=60, must-revalidate` with the version's `ETag` (a replace or delete moves this address, D-157) — a matching `If-None-Match` answers 304; a version's sha address is `immutable`"
+            "description": "the stored `Content-Type`; published: `max-age=60, must-revalidate` with the version's `ETag` (a publish or delete moves this address, D-157) — a matching `If-None-Match` answers 304; a version's sha address is `immutable`. Not yet published: only to a signed-in member or with `?kid=&expires=&signature=` (the addresses preview and members' delivery answers carry), `private, no-store`; anyone else gets 404"
           },
           "404": {
             "content": {
@@ -23159,7 +23807,7 @@
           }
         },
         "security": [],
-        "summary": "The asset's current version's verified bytes, publicly",
+        "summary": "The asset's verified bytes: its newest published version to anyone, its current one to a member or a signed address (D-229)",
         "tags": [
           "media"
         ]
